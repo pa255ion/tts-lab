@@ -1,0 +1,8 @@
+zig-out/
+.zig-cache/
+out/
+data/cmudict.dict
+gui/build/
+result
+*.wav
+data/models/
