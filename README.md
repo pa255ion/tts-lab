@@ -51,3 +51,16 @@ zig build test
 nix develop .#eval -c tools/eval-asr.sh      # whisper.cpp word error rate per engine (see the script for the model download)
 tools/spectrogram.sh out/*.wav               # PNG spectrograms (inside nix develop)
 ```
+
+## License and credits
+
+MIT, see [LICENSE](LICENSE).
+
+Pronunciations come from the [CMU Pronouncing Dictionary](https://github.com/cmusphinx/cmudict)
+(Copyright © 1993-2015 Carnegie Mellon University, BSD-style licence, full text in
+[licenses/CMUdict-LICENSE](licenses/CMUdict-LICENSE)). The built-in word list in
+`src/lexicon.zig` is drawn from it; the full dictionary is downloaded by
+`tools/fetch-cmudict.sh`, not shipped. The letter-to-sound rules are a
+re-implementation in the style of Elovitz et al., *Letter-to-Sound Rules for
+Automatic Translation of English Text to Phonetics* (Naval Research Laboratory,
+1976).

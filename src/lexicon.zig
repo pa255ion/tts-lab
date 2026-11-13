@@ -701,6 +701,11 @@ fn assignStress(word: []const u8, ps: []PS) void {
 
 // ---------------------------------------------------------------------------
 // Built-in dictionary: common words, numbers, and the demo vocabulary.
+//
+// Transcriptions follow, and are partly drawn from, the CMU Pronouncing
+// Dictionary: Copyright (C) 1993-2015 Carnegie Mellon University. All rights
+// reserved. Used under its BSD-style licence; see licenses/CMUdict-LICENSE
+// for the full text, conditions and disclaimer.
 // ---------------------------------------------------------------------------
 
 pub const builtin_dict =
