@@ -280,6 +280,24 @@ fn sourceParams(fr: *Frame, segs: []const Seg, si: usize, t: f32, mode: Mode, pf
             if (local < vot) {
                 const k = local / vot;
                 fr.ah = 0.45 * (1 - 0.3 * k);
+                if (refined) {
+                    // Release frication: the burst transient is followed by
+                    // turbulence at the constriction (10-20 ms, longest for
+                    // alveolars and velars) before the glottal aspiration
+                    // takes over. Without it the release is a click
+                    // followed by /h/.
+                    const fric_s: f32 = switch (pinf.place) {
+                        .labial => 0.006,
+                        .velar => 0.02,
+                        else => 0.018,
+                    };
+                    if (local < fric_s) {
+                        const q = local / fric_s;
+                        fr.af = 0.55 * (1 - q);
+                        fr.fg = tiedShape(prev, segs, si - 1, true);
+                        fr.ah *= 0.4 + 0.6 * q;
+                    }
+                }
                 fr.av = if (refined) fr.av * std.math.clamp((k - 0.7) / 0.3, 0, 1) else 0;
             }
         }

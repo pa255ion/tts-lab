@@ -291,7 +291,7 @@ bootstrapping over sentences.
 |---|---:|---:|
 | Formant classic | 18.3% | 9–29 |
 | Formant classic, flat F0 | 14.4% | 6–23 |
-| Formant refined | 21.7% | 11–34 |
+| Formant refined | 18.3% | 9–30 |
 | Diphone + PSOLA | 32.8% | 21–46 |
 | Diphone, raw units (no PSOLA) | 23.9% | 15–34 |
 | Unit selection | 14.4% | 6–24 |
@@ -318,7 +318,8 @@ holds up:
 - **Classic and refined formant synthesis are indistinguishable by ASR.** The
   refinements improve naturalness, which this metric doesn't see. They also
   fixed specific consonant errors: tying the burst spectrum to the formants
-  fixed most /k/→/t/,/p/ confusions. Section 8 has more on this.
+  fixed most /k/→/t/,/p/ confusions, and a release-frication phase fixed
+  initial /t/ being heard as /h/. Section 8 has more on this.
 - Flat F0 did *not* hurt ASR, and may even have helped. That is a reminder
   that intonation mostly serves naturalness, phrasing and meaning
   (statement vs question), not word recognition.
@@ -348,6 +349,7 @@ with stress) must be noticed, formalised and tuned by an expert.
 | Coarticulation | straight lines between targets, stop loci | dominance functions: every segment pulls every parameter with its own strength and reach | Vowel-to-vowel coarticulation across consonants, nasality spreading into vowels, context-dependent transitions, all automatic |
 | Parameter updates | held for 5 ms | interpolated per sample (except bursts) | No staircase roughness |
 | Bursts and frication | fixed noise bank | parallel resonators tied to the current F2..F5 (Klatt 1980) | Velar bursts track the vowel; fixed most /k/ confusions in the ASR test |
+| Stop release | burst, then straight into aspiration | burst, then 6–20 ms of decaying frication at the constriction, with the aspiration fading in under it | Initial /t/ stops sounding like /h/ ("Turn" was heard as "Her"); first-word ASR on a /t/-initial set went from 7/20 to 11/20 |
 | Vowel reduction, microprosody | partial | unstressed vowels toward schwa; F0 bumps after voiceless consonants | Small naturalness cues |
 
 Two lessons from building this:
@@ -452,6 +454,18 @@ drove the field to data-driven methods.
 - HMM vocal-tract warping used `cos` in an O(N·M) loop per frame
   (229 ms for 1 s of audio); a precomputed table brought it to 19 ms.
 - Qt 6 GUI built and checked headless (offscreen screenshot).
-- Open: refined still sometimes loses sentence-initial /t/ ("Turn" →
-  "Her") where classic doesn't; burst/aspiration levels measure the same, so
-  the cause is not yet found.
+- Fixed: refined lost sentence-initial /t/ ("Turn left" → "Her left").
+  The burst levels matched classic, and short-phrase tests showed classic has
+  the same weakness ("Ted" → "Head", "Turn left." → "Earth Lift"); the full
+  sentence only survived in classic thanks to context. The cause was the
+  release: a 12 ms burst followed directly by breathy aspiration, which a
+  listener parses as a click plus /h/. Natural voiceless stops have 10–20 ms
+  of frication at the constriction between the burst and the aspiration.
+  Refined now synthesizes that (place-dependent length: 6/18/20 ms for
+  labial/alveolar/velar; decaying amplitude through the formant-tied burst
+  shape; aspiration fading in under it). First-word accuracy on a 20-phrase
+  /t/-initial test set went from 7/20 to 11/20; full eval WER 21.7% → 18.3%
+  (within noise, but the targeted error is gone). An F1-cutback rule (wider
+  B1 and lower F1 during aspiration) was also tried, made no measurable
+  difference, and was left out. Classic is unchanged on purpose: it keeps
+  the early-rule behaviour as the baseline. "Ted" is still heard as "head".
