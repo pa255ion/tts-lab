@@ -1,6 +1,7 @@
 //! Shared signal-processing building blocks.
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const sample_rate: f32 = 16000;
 pub const sr_int: usize = 16000;
@@ -149,8 +150,14 @@ pub fn normalizeRms(x: []f32, target: f32) void {
     for (x) |*v| v.* *= g;
 }
 
+/// Heap for work done outside an arena: thread-safe where there are threads,
+/// the wasm allocator in single-threaded builds (e.g. wasm32-freestanding).
+pub const heap = if (builtin.single_threaded) (if (builtin.cpu.arch.isWasm()) std.heap.wasm_allocator else std.heap.page_allocator) else std.heap.smp_allocator;
+
 /// Monotonic clock in seconds (Linux), so the library needs no std.Io.
+/// Elsewhere (wasm) timings read as 0; callers time externally.
 pub fn now() f64 {
+    if (builtin.os.tag != .linux) return 0;
     var ts: std.os.linux.timespec = undefined;
     _ = std.os.linux.clock_gettime(.MONOTONIC, &ts);
     return @as(f64, @floatFromInt(ts.sec)) + @as(f64, @floatFromInt(ts.nsec)) * 1e-9;

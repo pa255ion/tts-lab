@@ -15,6 +15,7 @@
 //! recording would bring.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const dsp = @import("dsp.zig");
 const phones = @import("phones.zig");
 const Phone = phones.Phone;
@@ -324,7 +325,7 @@ pub const Corpus = struct {
                 };
             }
             fn work(cc: *Corpus, l: *const lexicon.Lexicon, w: usize, nw: usize) !void {
-                var scratch = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+                var scratch = std.heap.ArenaAllocator.init(dsp.heap);
                 defer scratch.deinit();
                 var i = w;
                 while (i < cc.recs.len) : (i += nw) {
@@ -336,20 +337,24 @@ pub const Corpus = struct {
                         .rate = st.rate,
                         .pitch_range = st.range,
                     });
-                    const rec = try record(std.heap.smp_allocator, &utt, @intCast(1000 + i), 1.0);
+                    const rec = try record(dsp.heap, &utt, @intCast(1000 + i), 1.0);
                     cc.recs[i] = rec;
-                    cc.frames[i] = try analyze(std.heap.smp_allocator, rec);
+                    cc.frames[i] = try analyze(dsp.heap, rec);
                 }
             }
         };
         const nw = @max(1, @min(threads, 32));
         var errs: [32]?anyerror = @splat(null);
-        var hs: [32]?std.Thread = @splat(null);
-        for (0..nw) |w| {
-            hs[w] = std.Thread.spawn(.{}, Job.run, .{ c, lex, w, nw, &errs[w] }) catch null;
-            if (hs[w] == null) Job.run(c, lex, w, nw, &errs[w]);
+        if (builtin.single_threaded) {
+            for (0..nw) |w| Job.run(c, lex, w, nw, &errs[w]);
+        } else {
+            var hs: [32]?std.Thread = @splat(null);
+            for (0..nw) |w| {
+                hs[w] = std.Thread.spawn(.{}, Job.run, .{ c, lex, w, nw, &errs[w] }) catch null;
+                if (hs[w] == null) Job.run(c, lex, w, nw, &errs[w]);
+            }
+            for (hs[0..nw]) |h| if (h) |th| th.join();
         }
-        for (hs[0..nw]) |h| if (h) |th| th.join();
         for (errs[0..nw]) |e| if (e) |er| return er;
 
         // Move into the corpus arena so one deinit frees everything.
@@ -359,10 +364,10 @@ pub const Corpus = struct {
                 .marks = try a.dupe(Mark, r.marks),
                 .labels = try a.dupe(Label, r.labels),
             };
-            r.deinit(std.heap.smp_allocator);
+            r.deinit(dsp.heap);
             r.* = moved;
             const mf = try a.dupe(Frame, f.*);
-            std.heap.smp_allocator.free(f.*);
+            dsp.heap.free(f.*);
             f.* = mf;
             c.audio_seconds += @as(f64, @floatFromInt(r.samples.len)) / dsp.sample_rate;
         }

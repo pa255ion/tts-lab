@@ -101,7 +101,7 @@ pub const Synth = struct {
         s.* = .{
             .gpa = gpa,
             .lex = try lexicon.Lexicon.init(gpa),
-            .threads = std.Thread.getCpuCount() catch 4,
+            .threads = if (@import("builtin").single_threaded) 1 else std.Thread.getCpuCount() catch 4,
         };
         return s;
     }

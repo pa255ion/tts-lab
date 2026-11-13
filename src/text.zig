@@ -209,7 +209,7 @@ fn spellInt(arena: std.mem.Allocator, out: *Tokens, n: u64, ordinal: bool) !void
 }
 
 fn spellBelow1000(arena: std.mem.Allocator, out: *Tokens, n: u64, ordinal: bool) !void {
-    var rest = n;
+    var rest: usize = @intCast(n); // < 1000; usize so it can index on 32-bit targets
     if (rest >= 100) {
         try appendWords(arena, out, ones[rest / 100]);
         rest %= 100;

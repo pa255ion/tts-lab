@@ -11,6 +11,7 @@
 //! butt joins.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const dsp = @import("dsp.zig");
 const phones = @import("phones.zig");
 const Phone = phones.Phone;
@@ -85,7 +86,7 @@ pub const Voice = struct {
 
         const Worker = struct {
             fn run(voice: *Voice, worker: usize, n_workers: usize, results: []?Unit, err: *?anyerror, secs: *f64) void {
-                var arena_state = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+                var arena_state = std.heap.ArenaAllocator.init(dsp.heap);
                 defer arena_state.deinit();
                 var idx = worker;
                 while (idx < N * N) : (idx += n_workers) {
@@ -93,7 +94,7 @@ pub const Voice = struct {
                     const b: Phone = @enumFromInt(idx % N);
                     if (a == .pau and b == .pau) continue;
                     _ = arena_state.reset(.retain_capacity);
-                    const r = recordUnit(arena_state.allocator(), std.heap.smp_allocator, a, b, @intCast(idx + 1), secs) catch |e| {
+                    const r = recordUnit(arena_state.allocator(), dsp.heap, a, b, @intCast(idx + 1), secs) catch |e| {
                         err.* = e;
                         return;
                     };
@@ -106,12 +107,16 @@ pub const Voice = struct {
         var errs: [32]?anyerror = @splat(null);
         var secs: [32]f64 = @splat(0);
         var results: [N * N]?Unit = @splat(null);
-        var handles: [32]?std.Thread = @splat(null);
-        for (0..n_workers) |w| {
-            handles[w] = std.Thread.spawn(.{}, Worker.run, .{ v, w, n_workers, &results, &errs[w], &secs[w] }) catch null;
-            if (handles[w] == null) Worker.run(v, w, n_workers, &results, &errs[w], &secs[w]);
+        if (builtin.single_threaded) {
+            for (0..n_workers) |w| Worker.run(v, w, n_workers, &results, &errs[w], &secs[w]);
+        } else {
+            var handles: [32]?std.Thread = @splat(null);
+            for (0..n_workers) |w| {
+                handles[w] = std.Thread.spawn(.{}, Worker.run, .{ v, w, n_workers, &results, &errs[w], &secs[w] }) catch null;
+                if (handles[w] == null) Worker.run(v, w, n_workers, &results, &errs[w], &secs[w]);
+            }
+            for (handles[0..n_workers]) |h| if (h) |th| th.join();
         }
-        for (handles[0..n_workers]) |h| if (h) |th| th.join();
         for (errs[0..n_workers]) |e| if (e) |er| return er;
 
         // Move units into this voice's arena (workers used the global heap).
@@ -120,8 +125,8 @@ pub const Voice = struct {
             const u = r orelse continue;
             const s = try a.dupe(i16, u.samples);
             const m = try a.dupe(Mark, u.marks);
-            std.heap.smp_allocator.free(u.samples);
-            std.heap.smp_allocator.free(u.marks);
+            dsp.heap.free(u.samples);
+            dsp.heap.free(u.marks);
             v.units[i] = .{ .samples = s, .marks = m, .start = u.start, .split = u.split, .end = u.end };
             v.bytes += s.len * 2 + m.len * @sizeOf(Mark) + @sizeOf(Unit);
         }

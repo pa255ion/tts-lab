@@ -106,6 +106,11 @@ pub const Lexicon = struct {
         var clean: std.ArrayList(u8) = .empty;
         for (word) |c| if (std.ascii.isAlphabetic(c)) try clean.append(arena, c);
         if (clean.items.len == 0) return &.{};
+        // A lone letter that isn't a word ("x", "y" in "y equals 2x") is said by name.
+        if (clean.items.len == 1) {
+            source.* = .spelled;
+            return letterName(clean.items[0]);
+        }
         source.* = .rules;
         return letterToSound(arena, self.rules, clean.items);
     }
@@ -1138,4 +1143,10 @@ test "lexicon basics" {
     const q = try lex.pronounce(arena_state.allocator(), "phonics", &src);
     try std.testing.expectEqual(Lexicon.Source.rules, src);
     try std.testing.expectEqual(Phone.f, q[0].phone);
+    // Lone letters are names ("x" -> EH K S), but "a" stays the word.
+    const x = try lex.pronounce(arena_state.allocator(), "x", &src);
+    try std.testing.expectEqual(Lexicon.Source.spelled, src);
+    try std.testing.expectEqual(Phone.eh, x[0].phone);
+    _ = try lex.pronounce(arena_state.allocator(), "a", &src);
+    try std.testing.expectEqual(Lexicon.Source.dictionary, src);
 }
