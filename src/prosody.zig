@@ -201,6 +201,7 @@ pub fn plan(arena: std.mem.Allocator, lex: *const lexicon.Lexicon, input: []cons
 
     // A multi-syllable word with only secondary stress still needs one accent.
     ensureOneAccentPerContentWord(segs.items);
+    deaccentProformOne(segs.items, words.items);
 
     switch (timing) {
         .klatt => assignDurations(segs.items, opt.rate),
@@ -281,6 +282,24 @@ fn accentStrongest(word: []Seg) void {
         }
     }
     if (best) |b| b.accent = true;
+}
+
+/// "the blue one", "a big one": after determiner + modifier, "one(s)" is a
+/// pro-form that takes no accent (the modifier carries it). Elsewhere
+/// ("chapter one", "one day") it is a number and keeps its accent.
+fn deaccentProformOne(segs: []Seg, words: []const Word) void {
+    const dets = [_][]const u8{ "the", "a", "an", "this", "that", "these", "those", "which", "another", "every", "each", "my", "your", "his", "her", "our", "their", "its" };
+    for (segs) |*s| {
+        const w = s.word orelse continue;
+        if (w < 2 or s.emphasis) continue;
+        const t = words[w].text;
+        if (!std.ascii.eqlIgnoreCase(t, "one") and !std.ascii.eqlIgnoreCase(t, "ones")) continue;
+        const d = words[w - 2].text;
+        for (dets) |x| if (std.ascii.eqlIgnoreCase(d, x)) {
+            s.accent = false;
+            s.function_word = true;
+        };
+    }
 }
 
 fn ensureOneAccentPerContentWord(segs: []Seg) void {
@@ -602,6 +621,12 @@ const Fit = struct {
     comma: f32 = -0.1,
     /// Focus (`*word*`): size of the focused accent.
     focus: f32 = 1.9,
+    /// Fall rate after the last accent of a statement.
+    beta_final: f32 = 8,
+    /// Yes/no questions: nuclear accent scale and final rise. ARCTIC has
+    /// too few questions to fit these; set by ear.
+    question_nuclear: f32 = 0.3,
+    question_rise: f32 = 0.5,
 };
 
 /// Start of the syllable whose vowel is segs[i]: back over the consonants
@@ -651,6 +676,10 @@ fn fujisakiFitted(f0: []f32, segs: []const Seg, phrases: []const Phrase, opt: Op
         const boost: f32 = if (ph.kind == .exclaim) 1.4 else 1.0;
         // With a focus in the phrase, the focus alone decides prominence:
         // no random accent sizes, and the final fall waits for its peak.
+        var last_acc: usize = ph.last_seg + 1;
+        for (ph.first_seg..ph.last_seg + 1) |i| if (segs[i].accent) {
+            last_acc = i;
+        };
         var focus_end: f32 = 0;
         for (ph.first_seg..ph.last_seg + 1) |i| if (segs[i].accent and segs[i].emphasis) {
             focus_end = segs[i].start + P.t2_frac * segs[i].dur;
@@ -663,7 +692,17 @@ fn fujisakiFitted(f0: []f32, segs: []const Seg, phrases: []const Phrase, opt: Op
             const on = syllableOnset(segs, i) + P.t1;
             const off = segs[i].start + P.t2_frac * segs[i].dur;
             // After a focus F0 drops quickly and stays low (post-focus compression).
-            const fall = if (segs[i].emphasis) P.beta else P.beta_fall;
+            var fall = if (segs[i].emphasis) P.beta else P.beta_fall;
+            if (i == last_acc and ph.kind != .comma) {
+                if (ph.rising) {
+                    // Yes/no question: a low nuclear accent, then the rise
+                    // (L* H-H%); a high accent under the rise overshoots.
+                    amp *= P.question_nuclear;
+                } else {
+                    // Declarative nucleus: the fall to the end is quick (H* L-L%).
+                    fall = P.beta_final;
+                }
+            }
             cmds[n] = .{ .t = on, .t2 = @max(off, on + 0.05), .amp = amp * range, .accent = true, .fall = fall };
             n += 1;
             k += 1;
@@ -671,7 +710,7 @@ fn fujisakiFitted(f0: []f32, segs: []const Seg, phrases: []const Phrase, opt: Op
         if (ph.rising) {
             var lv = ph.last_seg;
             while (lv > ph.first_seg and !segs[lv].phone.isVowel()) lv -= 1;
-            cmds[n] = .{ .t = segs[lv].start, .t2 = t1 + 0.4, .amp = 0.7 * range, .accent = true, .fall = P.beta };
+            cmds[n] = .{ .t = segs[lv].start, .t2 = t1 + 0.4, .amp = P.question_rise * range, .accent = true, .fall = P.beta };
             n += 1;
         } else if (ph.kind != .comma) {
             cmds[n] = .{ .t = @max(t1 - 0.35, focus_end), .amp = P.final_low * range, .accent = false };

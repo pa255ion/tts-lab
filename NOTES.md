@@ -616,3 +616,17 @@ drove the field to data-driven methods.
   engines: with it, the diphone voice's WER went 15.0% → 19.4%. ASR on the 60 b-set sentences:
   refined 24.5% with the rules, 22.2% fitted (CIs ±5); 20-sentence set:
   refined 16.1% (was 17.8%), diphone, unit selection and HMM unchanged.
+- 2026-11-19: Listening result for the intonation pass: no preference
+  overall (new 3, old 3, no difference 2; one listener). The listener's
+  notes named two faults, both confirmed in the F0: the yes/no question
+  rise sat on top of a high nuclear accent ("…tonight?" peaked 9 st above
+  the phrase), and a statement could end without a fall ("…not the blue
+  one." stayed at 120 Hz where the rules fell to 88 Hz) because "one" got
+  its own accent right at the end. Fixes: the nuclear accent of a yes/no
+  question is low (0.3×) and the rise smaller (0.5 instead of 0.7), i.e.
+  L* H-H% instead of H* plus a rise (now +5 st); the last accent of a
+  statement falls quickly (β 8); and "one(s)" after determiner + modifier
+  ("the blue one") is a pro-form without an accent, in all engines. b-set
+  measures stay within the speakers' range (end of sentence re p10 −0.69 st
+  vs −0.93…+0.20; first − last accent 2.5 st); ASR on the 60 b-set
+  sentences 19.7% (CI 14.7–24.9; was 22.2%).
