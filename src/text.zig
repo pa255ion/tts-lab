@@ -14,6 +14,8 @@ pub const Token = union(enum) {
     word: []const u8,
     letter: u8,
     punct: Punct,
+    /// `*`: toggles emphasis (contrastive focus) on the words in between.
+    emph,
 };
 
 pub const Tokens = std.ArrayList(Token);
@@ -51,6 +53,7 @@ pub fn tokenize(arena: std.mem.Allocator, text: []const u8) !Tokens {
                 '+' => try appendWords(arena, &out, "plus"),
                 '=' => try appendWords(arena, &out, "equals"),
                 '@' => try appendWords(arena, &out, "at"),
+                '*' => try out.append(arena, .emph),
                 else => {},
             }
             i += 1;
@@ -246,6 +249,7 @@ test "numbers" {
         },
         .punct => try s.appendSlice(a, ". "),
         .letter => |l| try s.append(a, l),
+        .emph => try s.append(a, '*'),
     };
     try std.testing.expectEqualStrings("doctor smith paid three dollars and fifty cents on the twenty first in nineteen eighty four . ", s.items);
 }

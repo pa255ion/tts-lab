@@ -574,3 +574,45 @@ drove the field to data-driven methods.
   8 blind trials (sides shuffled, 5 of 8 with the new voice as A). One
   listener, so it says nothing about listeners in general, but by a sign
   test that is unlikely to be chance for this listener (p ≈ 0.004).
+- 2026-11-19: Intonation pass on the refined engine (`--intonation
+  rules|fitted`; refined defaults to fitted, every other engine keeps the
+  rules). New tool `tools/intonation.py` measures F0 at the planned accents
+  and phrases of 60 ARCTIC prompts, for our audio and for the three
+  speakers' recordings (planned phones aligned to their labels), with the
+  same pitch tracker for both; `AUDIO=N tools/fetch-arctic.sh` fetches the
+  recordings. Fitted on the a-set; b-set (held out):
+
+  | measure                          | rules | fitted | bdl   | rms   | jmk   |
+  |----------------------------------|-------|--------|-------|-------|-------|
+  | phrase range p90–p10 (st)        | 8.3   | 5.7    | 6.3   | 7.2   | 5.6   |
+  | accent peak delay from vowel onset (ms) | 69 | 20 | 20    | 10    | 13    |
+  | declination of accent peaks (st/s) | −5.1 | −1.9  | −1.5  | −1.7  | −2.1  |
+  | first − last accent (st)         | 7.4   | 2.4    | 2.1   | 3.5   | 3.6   |
+  | accent residual sd (st)          | 1.1   | 1.9    | 2.0   | 1.8   | 1.5   |
+  | unaccented vowels re p10 (st)    | 2.4   | 2.2    | 2.8   | 3.2   | 2.5   |
+  | F0 sd over vowels (st)           | 3.6   | 2.8    | 2.9   | 3.2   | 2.5   |
+  | \|dF0\| per 10 ms, p90 (st)        | 0.37  | 0.47   | 0.73  | 0.90  | 0.81  |
+
+  What changed: accent commands start with the syllable onset and end
+  halfway through the vowel, rising fast (β 25) and falling slowly (β 3), so
+  peaks land early in the vowel and F0 stays up between accents (the rules
+  peaked at the end of the vowel and plateaued); downstep 3% per accent
+  instead of 15% and a smaller phrase command (the rules declined 2–3× too
+  fast); accent sizes vary ±80% per word by a stable hash, since readers
+  don't weight accents equally and the text alone doesn't say which; a small
+  fall before commas instead of a continuation rise (readers stayed level).
+  Also new: `*word*` marks contrastive focus (all engines): the focused
+  accent is 1.9× (3× under the rules, whose declination buries it
+  otherwise) and falls fast, earlier accents in the phrase are 0.6×, later
+  ones 0.25× (post-focus compression), accent sizes don't vary in that
+  phrase, the final fall waits for the focus peak, and the word is 10–30%
+  longer.
+  In the synthesizer, a slow random F0 wander (AR(1), sd 2.5%, 30 ms)
+  raised the fast F0 movement, though it still falls short: mid-vowel
+  |dF0| p90 0.33 → 0.43 against 0.69–0.80 natural. Some of the natural
+  figure is probably tracker noise on real voices. Making the Klatt-style
+  flutter 2.5× larger barely moved it, and it was left at its old size.
+  Wander is off when the engine records the corpora for the data-driven
+  engines: with it, the diphone voice's WER went 15.0% → 19.4%. ASR on the 60 b-set sentences:
+  refined 24.5% with the rules, 22.2% fitted (CIs ±5); 20-sentence set:
+  refined 16.1% (was 17.8%), diphone, unit selection and HMM unchanged.

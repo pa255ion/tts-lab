@@ -8,7 +8,7 @@
 //!   ttslab bench [--reps N]      cost profile (markdown)
 //!
 //! Options: -e/--engine classic|refined|diphone|unitsel|hmm (or 1-5)
-//!          --f0 flat|hat|fujisaki  --timing klatt|fitted  --pitch X  --rate X  --range X  --formant X
+//!          --f0 flat|hat|fujisaki  --timing klatt|fitted  --intonation rules|fitted  --pitch X  --rate X  --range X  --formant X
 //!          --no-psola  --modify  --no-mlpg  --gv
 //!          -o/--out FILE  --play/--no-play  --dict FILE  --no-dict  --threads N
 //!
@@ -85,6 +85,8 @@ fn parseArgs(a: std.mem.Allocator, args: []const [:0]const u8) !Cli {
             c.opt.prosody.timing = std.meta.stringToEnum(prosody.Timing, v) orelse return error.BadArgs;
         } else if (std.mem.eql(u8, x, "--rate")) {
             c.opt.prosody.rate = try parseF(try next(args, &i));
+        } else if (std.mem.eql(u8, x, "--intonation")) {
+            c.opt.prosody.intonation = std.meta.stringToEnum(prosody.Intonation, try next(args, &i)) orelse return error.BadArgs;
         } else if (std.mem.eql(u8, x, "--range")) {
             c.opt.prosody.pitch_range = try parseF(try next(args, &i));
         } else if (std.mem.eql(u8, x, "--formant")) {

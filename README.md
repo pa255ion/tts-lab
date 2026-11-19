@@ -34,7 +34,7 @@ ttslab bench                                 # cost profile
 ```
 
 Engines: `classic refined diphone unitsel hmm` (or `1`–`5`). Options:
-`--f0 flat|hat|fujisaki --timing klatt|fitted --pitch X --rate X --range X --formant X --no-psola --modify --no-mlpg --gv`.
+`--f0 flat|hat|fujisaki --timing klatt|fitted --intonation rules|fitted --pitch X --rate X --range X --formant X --no-psola --modify --no-mlpg --gv`.
 `ttslab segs TEXT` prints the planned segments with their prosodic features.
 
 ## GUI
@@ -54,6 +54,7 @@ tools/spectrogram.sh out/*.wav               # PNG spectrograms (inside nix deve
 AUDIO=1 tools/fetch-arctic.sh                # CMU ARCTIC labels (+20 recordings each) for the next two
 nix develop .#eval -c tools/acoustics.py -s out.wav labels.csv ...   # compare with natural speech
 nix develop .#eval -c tools/fit-durations.py --write                 # refit src/duration_model.zig
+nix develop .#eval -c tools/intonation.py --set b                    # F0 contours vs ARCTIC (AUDIO=60 tools/fetch-arctic.sh)
 ```
 
 ## License and credits
