@@ -5,11 +5,13 @@
 //!   ttslab compare [opts] TEXT   every engine -> out/<engine>.wav
 //!   ttslab phonemes TEXT         show the front end's transcription
 //!   ttslab segs TEXT             planned segments and prosodic features (CSV)
+//!   ttslab profile               the stock voice as a voice profile (template)
 //!   ttslab bench [--reps N]      cost profile (markdown)
 //!
 //! Options: -e/--engine classic|refined|diphone|unitsel|hmm (or 1-5)
 //!          --f0 flat|hat|fujisaki  --timing klatt|fitted  --pitch X  --rate X  --range X  --formant X
 //!          --no-psola  --modify  --no-mlpg  --gv
+//!          --voice PROFILE  --style NAME  --variation X  --seed N   (refined engine; tools/fit-voice.py)
 //!          -o/--out FILE  --play/--no-play  --dict FILE  --no-dict  --threads N
 //!
 //! Playback uses pw-play, paplay or aplay (first that works); set
@@ -18,6 +20,7 @@
 
 const std = @import("std");
 const tts = @import("tts.zig");
+const phones = @import("phones.zig");
 const prosody = @import("prosody.zig");
 const wav = @import("wav.zig");
 const bench = @import("bench.zig");
@@ -44,6 +47,7 @@ const Cli = struct {
     dict_explicit: bool = false,
     reps: usize = 5,
     threads: ?usize = null,
+    voice: ?[]const u8 = null,
     positional: std.ArrayList([]const u8) = .empty,
 };
 
@@ -110,6 +114,14 @@ fn parseArgs(a: std.mem.Allocator, args: []const [:0]const u8) !Cli {
             c.dict = null;
         } else if (std.mem.eql(u8, x, "--reps")) {
             c.reps = std.fmt.parseInt(usize, try next(args, &i), 10) catch return error.BadArgs;
+        } else if (std.mem.eql(u8, x, "--voice")) {
+            c.voice = try next(args, &i);
+        } else if (std.mem.eql(u8, x, "--style")) {
+            c.opt.style = try next(args, &i);
+        } else if (std.mem.eql(u8, x, "--variation")) {
+            c.opt.variation = try parseF(try next(args, &i));
+        } else if (std.mem.eql(u8, x, "--seed")) {
+            c.opt.seed = std.fmt.parseInt(u32, try next(args, &i), 10) catch return error.BadArgs;
         } else if (std.mem.eql(u8, x, "--threads")) {
             c.threads = std.fmt.parseInt(usize, try next(args, &i), 10) catch return error.BadArgs;
         } else {
@@ -140,6 +152,26 @@ fn run(init: std.process.Init) !void {
     defer synth.deinit();
     if (cli.threads) |t| synth.threads = t;
     if (cli.dict) |path| loadDict(synth, path, !cli.dict_explicit);
+    if (cli.voice) |path| {
+        const data = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20)) catch {
+            std.debug.print("could not read voice profile {s}\n", .{path});
+            return error.BadArgs;
+        };
+        defer gpa.free(data);
+        var ln: usize = 0;
+        var tmp = std.heap.ArenaAllocator.init(gpa);
+        defer tmp.deinit();
+        _ = tts.voice_profile.parse(tmp.allocator(), data, &ln) catch {
+            std.debug.print("{s}:{d}: not a voice profile line\n", .{ path, ln });
+            return error.BadArgs;
+        };
+        try synth.setProfile(data);
+        cli.opt.profile = &synth.profile.?;
+        const st = synth.profile.?.style(cli.opt.style);
+        std.debug.print("voice profile {s} ({s}), style {s}\n", .{ path, synth.profile.?.name, if (st) |x| x.name else "-" });
+        if (cli.opt.style) |want| if (st == null or !std.mem.eql(u8, st.?.name, want)) std.debug.print("  (no style \"{s}\" in the profile: using the first)\n", .{want});
+        if (cli.opt.engine != .formant_refined) std.debug.print("  (voice profiles apply to the refined formant engine only)\n", .{});
+    }
 
     const interactive = std.Io.File.stdout().isTty(io) catch false;
     const play = cli.play orelse interactive;
@@ -163,6 +195,21 @@ fn run(init: std.process.Init) !void {
         for (u.words) |w| if (w.source == .rules) print("  (letter-to-sound rules: {s})\n", .{w.text});
         return;
     }
+    if (std.mem.eql(u8, cmd, "profile")) {
+        // The stock refined voice written as a voice profile: a template for
+        // hand edits, and the starting point of tools/fit-voice.py.
+        print("# tts-lab voice profile (see src/voice_profile.zig)\nname stock\n", .{});
+        for (0..phones.Phone.count) |i| {
+            const ph: phones.Phone = @enumFromInt(i);
+            if (ph == .pau) continue;
+            const inf = ph.info();
+            print("phone {s} f {d:.0} {d:.0} {d:.0}", .{ ph.name(), inf.f[0], inf.f[1], inf.f[2] });
+            if (inf.class == .diphthong) print(" fe {d:.0} {d:.0} {d:.0}", .{ inf.f_end[0], inf.f_end[1], inf.f_end[2] });
+            print(" b {d:.0} {d:.0} {d:.0}\n", .{ inf.b[0], inf.b[1], inf.b[2] });
+        }
+        print("style neutral f0 110 range 1 rate 1 rd 0 breath 1\n", .{});
+        return;
+    }
     if (std.mem.eql(u8, cmd, "segs")) {
         // The planned segments with their prosodic features, as CSV.
         var as = std.heap.ArenaAllocator.init(gpa);
@@ -181,7 +228,7 @@ fn run(init: std.process.Init) !void {
         defer as.deinit();
         const u = try synth.plan(as.allocator(), rest, cli.opt);
         const mode: formant.Mode = if (cli.opt.engine == .formant_classic) .classic else .refined;
-        const frames = try formant.makeFrames(as.allocator(), &u, mode, .{});
+        const frames = try formant.makeFrames(as.allocator(), &u, mode, cli.opt.formantVoice());
         print("t_ms,phone,f0,av,ah,af,F1,F2,F3,B1,FNZ,rd\n", .{});
         var si: usize = 0;
         for (frames, 0..) |f, i| {
@@ -272,8 +319,27 @@ fn batch(synth: *tts.Synth, arena: std.mem.Allocator, args: []const []const u8, 
         if (line.len == 0) continue;
         const r = try synth.speak(synth.gpa, line, cli.opt);
         defer r.deinit(synth.gpa);
-        const path = try std.fmt.allocPrint(arena, "out/eval/{s}_{d:0>2}.wav", .{ args[1], n });
+        // A TAG with a slash is a path prefix; then the planned segments are
+        // written next to each WAV too (tools/fit-voice.py reads them).
+        const prefix = std.mem.indexOfScalar(u8, args[1], '/') != null;
+        const path = if (prefix)
+            try std.fmt.allocPrint(arena, "{s}_{d:0>3}.wav", .{ args[1], n })
+        else
+            try std.fmt.allocPrint(arena, "out/eval/{s}_{d:0>2}.wav", .{ args[1], n });
         try saveWav(r.samples, path);
+        if (prefix) {
+            var as = std.heap.ArenaAllocator.init(synth.gpa);
+            defer as.deinit();
+            const u = try synth.plan(as.allocator(), line, cli.opt);
+            var csv: std.ArrayList(u8) = .empty;
+            try csv.appendSlice(as.allocator(), "phone,stress,word,function_word,accent,phrase_final,start_ms,dur_ms\n");
+            for (u.segs) |sg| {
+                const w: i32 = if (sg.word) |x| @intCast(x) else -1;
+                try csv.print(as.allocator(), "{s},{d},{d},{d},{d},{d},{d:.1},{d:.1}\n", .{ sg.phone.name(), sg.stress, w, @intFromBool(sg.function_word), @intFromBool(sg.accent), @intFromBool(sg.phrase_final), sg.start * 1000, sg.dur * 1000 });
+            }
+            const cpath = try std.fmt.allocPrint(arena, "{s}_{d:0>3}.csv", .{ args[1], n });
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = cpath, .data = csv.items });
+        }
         total_synth += r.synth_seconds;
         total_audio += r.audio_seconds;
         n += 1;

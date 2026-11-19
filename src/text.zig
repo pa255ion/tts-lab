@@ -14,6 +14,10 @@ pub const Token = union(enum) {
     word: []const u8,
     letter: u8,
     punct: Punct,
+    /// `{shown|aa0 p aa1}` or `{aa0 p aa1}`: a word with its pronunciation
+    /// given in ARPAbet (the voice script's nonsense words, or any word the
+    /// lexicon gets wrong). `shown` is the word as displayed (may be empty).
+    phones: struct { shown: []const u8, arpabet: []const u8 },
 };
 
 pub const Tokens = std.ArrayList(Token);
@@ -24,7 +28,16 @@ pub fn tokenize(arena: std.mem.Allocator, text: []const u8) !Tokens {
     var i: usize = 0;
     while (i < text.len) {
         const c = text[i];
-        if (std.ascii.isAlphabetic(c)) {
+        if (c == '{') {
+            const close = std.mem.indexOfScalarPos(u8, text, i, '}') orelse text.len;
+            const body = text[i + 1 .. close];
+            i = @min(close + 1, text.len);
+            if (std.mem.indexOfScalar(u8, body, '|')) |bar| {
+                try out.append(arena, .{ .phones = .{ .shown = body[0..bar], .arpabet = body[bar + 1 ..] } });
+            } else {
+                try out.append(arena, .{ .phones = .{ .shown = "", .arpabet = body } });
+            }
+        } else if (std.ascii.isAlphabetic(c)) {
             const start = i;
             while (i < text.len and (std.ascii.isAlphabetic(text[i]) or text[i] == '\'')) i += 1;
             const raw = text[start..i];
@@ -246,6 +259,18 @@ test "numbers" {
         },
         .punct => try s.appendSlice(a, ". "),
         .letter => |l| try s.append(a, l),
+        .phones => {},
     };
     try std.testing.expectEqualStrings("doctor smith paid three dollars and fifty cents on the twenty first in nineteen eighty four . ", s.items);
+}
+
+test "inline phones" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const toks = try tokenize(a, "Say {ah-PAH|aa0 p aa1} again {hh iy1 d}.");
+    try std.testing.expectEqual(@as(usize, 5), toks.items.len);
+    try std.testing.expectEqualStrings("ah-PAH", toks.items[1].phones.shown);
+    try std.testing.expectEqualStrings("aa0 p aa1", toks.items[1].phones.arpabet);
+    try std.testing.expectEqualStrings("hh iy1 d", toks.items[3].phones.arpabet);
 }

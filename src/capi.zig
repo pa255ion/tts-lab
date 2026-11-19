@@ -85,6 +85,13 @@ export fn ttslab_add_dict(s: *tts.Synth, data: [*]const u8, len: usize) c_int {
     return @intCast(n);
 }
 
+/// Load a voice profile (text, see src/voice_profile.zig) for the refined
+/// formant engine; len 0 goes back to the stock voice. 0 on success.
+export fn ttslab_set_voice(s: *tts.Synth, data: [*]const u8, len: usize) c_int {
+    s.setProfile(data[0..len]) catch return -1;
+    return 0;
+}
+
 export fn ttslab_dict_words(s: *tts.Synth) c_int {
     return @intCast(s.lex.count());
 }
@@ -125,7 +132,9 @@ export fn ttslab_prepare(s: *tts.Synth, engine: c_int) f64 {
 
 export fn ttslab_speak(s: *tts.Synth, text: [*:0]const u8, o: *const Options, out: *Result) c_int {
     out.* = std.mem.zeroes(Result);
-    const r = s.speak(gpa, std.mem.span(text), toOptions(o)) catch return -1;
+    var opt = toOptions(o);
+    if (s.profile) |*p| opt.profile = p;
+    const r = s.speak(gpa, std.mem.span(text), opt) catch return -1;
     const tr = gpa.dupeZ(u8, r.transcription) catch {
         r.deinit(gpa);
         return -1;

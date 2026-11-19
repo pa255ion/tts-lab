@@ -3,7 +3,8 @@
 # male speakers to data/arctic/, for tools/fit-durations.py.
 # ARCTIC is free for any use under CMU's licence (data/arctic/COPYING);
 # nothing from it is committed, only the numbers fitted from it.
-# AUDIO=1 also fetches the first 20 recordings per speaker (tools/acoustics.py).
+# AUDIO=1 also fetches the first 20 recordings per speaker (tools/acoustics.py);
+# AUDIO=N the first N (tools/align.py trains on 300 per speaker).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 D=data/arctic
@@ -16,7 +17,8 @@ for spk in ${SPEAKERS:-bdl rms jmk}; do
   mkdir -p "$D/$spk"
   cut -f1 "$D/prompts.tsv" | while read -r id; do
     [ -s "$D/$spk/$id.lab" ] || echo "$base/cmu_us_${spk}_arctic/lab/$id.lab $D/$spk/$id.lab"
-    if [ -n "${AUDIO:-}" ] && [[ $id < arctic_a0021 ]] && [ ! -s "$D/$spk/$id.wav" ]; then
+    n=${AUDIO:-0}; [ "$n" = 1 ] && n=20
+    if [ "$n" -gt 0 ] && [[ $id == arctic_a* ]] && [ "$((10#${id#arctic_a}))" -le "$n" ] && [ ! -s "$D/$spk/$id.wav" ]; then
       echo "$base/cmu_us_${spk}_arctic/wav/$id.wav $D/$spk/$id.wav"
     fi
   done

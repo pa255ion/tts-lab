@@ -10,6 +10,7 @@ const corpus = @import("corpus.zig");
 const diphone = @import("diphone.zig");
 const unitsel = @import("unitsel.zig");
 const hmm = @import("hmm.zig");
+pub const voice_profile = @import("voice_profile.zig");
 
 pub const Engine = enum(u8) {
     formant_classic,
@@ -65,6 +66,35 @@ pub const Options = struct {
     unit_modify: bool = false,
     hmm_mlpg: bool = true,
     hmm_gv: bool = false,
+    /// A voice fitted to a speaker (refined formant engine only; see
+    /// voice_profile.zig). null: the stock voice.
+    profile: ?*const voice_profile.Profile = null,
+    /// The profile's speaking style (null: its first).
+    style: ?[]const u8 = null,
+    /// 0 = the speaker's mean targets, 1 = their measured token-to-token
+    /// spread (needs a profile fitted from several takes).
+    variation: f32 = 0,
+    seed: u32 = 1,
+
+    /// The formant engines' voice for these options.
+    pub fn formantVoice(o: Options) formant.Voice {
+        var v: formant.Voice = .{ .formant_scale = o.formant_scale };
+        if (o.activeProfile()) |pr| {
+            v.profile = pr;
+            v.variation = o.variation;
+            v.seed = o.seed;
+            if (pr.style(o.style)) |st| {
+                v.rd_offset = st.rd;
+                v.breath = st.breath;
+            }
+        }
+        return v;
+    }
+
+    /// The profile, if it applies to the chosen engine.
+    pub fn activeProfile(o: Options) ?*const voice_profile.Profile {
+        return if (o.engine == .formant_refined) o.profile else null;
+    }
 };
 
 pub const Result = struct {
@@ -94,6 +124,9 @@ pub const Synth = struct {
     sentence_corpus: ?*corpus.Corpus = null,
     unit_voice: ?*unitsel.Voice = null,
     hmm_voice: ?*hmm.Voice = null,
+    /// A profile loaded by a front end (capi: ttslab_set_voice).
+    profile: ?voice_profile.Profile = null,
+    profile_arena: ?std.heap.ArenaAllocator = null,
 
     pub fn init(gpa: std.mem.Allocator) !*Synth {
         const s = try gpa.create(Synth);
@@ -107,6 +140,7 @@ pub const Synth = struct {
     }
 
     pub fn deinit(s: *Synth) void {
+        if (s.profile_arena) |*a| a.deinit();
         if (s.hmm_voice) |v| {
             v.deinit();
             s.gpa.destroy(v);
@@ -163,8 +197,33 @@ pub const Synth = struct {
         return s.hmm_voice.?;
     }
 
+    /// Load (or, with empty text, clear) the profile kept in the Synth.
+    pub fn setProfile(s: *Synth, src: []const u8) !void {
+        if (s.profile_arena) |*a| a.deinit();
+        s.profile_arena = null;
+        s.profile = null;
+        if (src.len == 0) return;
+        var arena = std.heap.ArenaAllocator.init(s.gpa);
+        errdefer arena.deinit();
+        const p = try voice_profile.parse(arena.allocator(), src, null);
+        s.profile_arena = arena;
+        s.profile = p;
+    }
+
     pub fn plan(s: *Synth, arena: std.mem.Allocator, text: []const u8, opt: Options) !prosody.Utterance {
         var po = opt.prosody;
+        var dur_scale: [@import("phones.zig").Phone.count]f32 = undefined;
+        if (opt.activeProfile()) |pr| {
+            // The speaker's pitch, range and tempo, on top of the user's
+            // own settings (which default to 1).
+            if (pr.style(opt.style)) |st| {
+                if (st.base_f0) |f| po.base_f0 = f * (po.base_f0 / 110);
+                po.pitch_range *= st.pitch_range;
+                po.rate *= st.rate;
+            }
+            for (&dur_scale, pr.phone) |*d, e| d.* = e.dur;
+            po.dur_scale = &dur_scale;
+        }
         po.base_f0 *= opt.pitch_scale;
         // The refined formant engine uses the data-fitted timing; the others
         // keep Klatt's rules (their voices were recorded with them).
@@ -186,7 +245,7 @@ pub const Synth = struct {
         const samples: []f32 = switch (opt.engine) {
             .formant_classic, .formant_refined => blk: {
                 const mode: formant.Mode = if (opt.engine == .formant_classic) .classic else .refined;
-                const o = try formant.synthesize(alloc, &utt, mode, .{ .formant_scale = opt.formant_scale });
+                const o = try formant.synthesize(alloc, &utt, mode, opt.formantVoice());
                 alloc.free(o.gci);
                 alloc.free(o.gci_voiced);
                 break :blk o.samples;

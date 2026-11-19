@@ -43,6 +43,8 @@ pub const Options = struct {
     pitch_range: f32 = 1.0,
     /// > 1 is faster.
     rate: f32 = 1.0,
+    /// Per-phone duration multipliers (a voice profile's), fitted timing only.
+    dur_scale: ?*const [Phone.count]f32 = null,
 };
 
 pub const Seg = struct {
@@ -115,6 +117,20 @@ const Phrase = struct {
     first_in_sentence: bool,
 };
 
+/// "aa0 p aa1" -> phones; unknown symbols are skipped.
+fn parseArpabet(arena: std.mem.Allocator, s: []const u8) ![]const lexicon.PS {
+    var out: std.ArrayList(lexicon.PS) = .empty;
+    var it = std.mem.tokenizeAny(u8, s, " \t,");
+    while (it.next()) |sym| {
+        const r = Phone.parse(sym) orelse continue;
+        if (r.phone == .pau) continue;
+        // A vowel written without a digit is taken as primary-stressed.
+        const digit = sym[sym.len - 1] >= '0' and sym[sym.len - 1] <= '2';
+        try out.append(arena, .{ .phone = r.phone, .stress = if (r.phone.isVowel() and !digit) 1 else r.stress });
+    }
+    return out.items;
+}
+
 /// Plan an utterance. Everything is allocated in `arena`.
 pub fn plan(arena: std.mem.Allocator, lex: *const lexicon.Lexicon, input: []const u8, opt: Options) !Utterance {
     const toks = try text.tokenize(arena, input);
@@ -132,16 +148,21 @@ pub fn plan(arena: std.mem.Allocator, lex: *const lexicon.Lexicon, input: []cons
 
     for (toks.items, 0..) |tok, ti| {
         switch (tok) {
-            .word, .letter => {
+            .word, .letter, .phones => {
                 var src: lexicon.Lexicon.Source = .spelled;
                 const w_text: []const u8 = switch (tok) {
                     .word => |w| w,
                     .letter => |l| try std.fmt.allocPrint(arena, "{c}", .{l}),
+                    .phones => |ph| if (ph.shown.len > 0) ph.shown else ph.arpabet,
                     else => unreachable,
                 };
                 const pron = switch (tok) {
                     .word => |w| try lex.pronounce(arena, w, &src),
                     .letter => |l| lexicon.letterName(l),
+                    .phones => |ph| blk: {
+                        src = .dictionary;
+                        break :blk try parseArpabet(arena, ph.arpabet);
+                    },
                     else => unreachable,
                 };
                 if (pron.len == 0) continue;
@@ -184,7 +205,7 @@ pub fn plan(arena: std.mem.Allocator, lex: *const lexicon.Lexicon, input: []cons
 
     switch (timing) {
         .klatt => assignDurations(segs.items, opt.rate),
-        .fitted => assignDurationsFitted(segs.items, opt.rate),
+        .fitted => assignDurationsFitted(segs.items, opt.rate, opt.dur_scale),
     }
 
     var t: f32 = 0;
@@ -312,7 +333,7 @@ fn assignDurations(segs: []Seg, rate: f32) void {
 // The factors mirror the Python feature extraction exactly.
 // ---------------------------------------------------------------------------
 
-fn assignDurationsFitted(segs: []Seg, rate: f32) void {
+fn assignDurationsFitted(segs: []Seg, rate: f32, scale: ?*const [Phone.count]f32) void {
     const V = dm.vowel;
     const C = dm.consonant;
     for (segs, 0..) |*s, i| {
@@ -351,6 +372,7 @@ fn assignDurationsFitted(segs: []Seg, rate: f32) void {
             if (i + 1 >= segs.len or segs[i + 1].word != s.word) ms *= C.word_final;
             if (nxt.isVowel() and segs[i + 1].stress == 1) ms *= C.stressed_onset;
         }
+        if (scale) |sc| ms *= sc[@intFromEnum(s.phone)];
         s.dur = @max(ms, 20) / 1000.0 / rate;
     }
     for (segs) |*s| if (s.phone == .pau) {

@@ -451,6 +451,77 @@ F0 change per 10 ms is 0.37 st against 0.53–0.67 natural), and every
 judgement a listener would make. The A/B page in the log entry for
 2026-11-18 collects the latter.
 
+### Fitted to one speaker: voice profiles
+
+The refined engine's targets are textbook values (Klatt 1980, Peterson &
+Barney): an average man, not anyone. A voice profile replaces them with one
+speaker's (`src/voice_profile.zig`, README "Fit a voice to your own
+recordings"). The pipeline:
+
+1. **Alignment** (`tools/align.py`): a monophone HMM forced aligner in numpy
+   (39 MFCCs every 5 ms, 3 states, 4 Gaussians per state, optional pauses
+   between words), trained on 600 ARCTIC sentences of bdl, rms and jmk, and
+   adapted to the new speaker by MAP re-estimation of the means. Boundary
+   error against the ARCTIC labels on 100 sentences not used for training,
+   with the phone sequence from our own lexicon:
+
+   | speaker | in training? | median | within 20 ms | within 40 ms |
+   |---|---|---|---|---|
+   | bdl, rms, jmk | other sentences | 5–10 ms | 78–90% | 97% |
+   | slt (female) | no, unadapted | 10.5 ms | 73% | 88% |
+   | slt, adapted twice | no | 6.8 ms | 87% | 97% |
+   | clb (female), adapted twice | no | 8.0 ms | 81% | 96% |
+
+   The ARCTIC labels are themselves automatic, so this is agreement with
+   another aligner, at about the level HTK-style aligners reach against
+   hand labels.
+2. **Fitting** (`tools/fit-voice.py`): analysis by synthesis. The engine
+   speaks the same prompts with the current profile, recordings and
+   synthesis are measured identically at aligned points (LPC formants,
+   bandwidths, levels, durations, F0, H1–H2, HNR), and each value moves by
+   the difference; four rounds. Copying measurements straight into the
+   targets would be wrong twice over: sentence-medial vowels are undershot
+   (the engine's coarticulation would reduce them a second time), and LPC
+   has its own biases (nasals, bandwidths), which cancel when both sides are
+   measured the same way. The Rd and breath-noise responses are measured on
+   the engine first (here +9 dB of H1–H2 per unit of Rd, −1.4 dB of HNR per
+   doubling of breath noise).
+
+Validated on bdl as a stand-in speaker: fitted from arctic_a0001–0200
+aligned by the aligner (not the labels), scored on a0201–0300:
+
+| bdl, held-out sentences | stock voice | bdl profile |
+|---|---|---|
+| per-vowel formant error F1 / F2 / F3 | 10.1 / 9.5 / 7.9% | 4.8 / 5.0 / 1.4% |
+| per-token formant error F1 / F2 / F3 | 14.5 / 10.5 / 7.3% | 9.8 / 7.2 / 3.7% |
+| median F0 (bdl: 129 Hz) | 110 Hz | 121 Hz |
+| HNR, bdl minus synthetic | −4.2 dB | −2.7 dB |
+| obstruent level, bdl minus synthetic | −2.7 dB | −1.0 dB |
+| LTAS (octave bands re 500 Hz), mean abs. difference | 2.6 dB | 1.4 dB |
+| ASR WER, 60 ARCTIC b-set sentences | 19.1% (CI 14–24) | 22.6% (CI 18–28) |
+| ASR WER, the usual 20 sentences | 17.8% | 17.2% |
+
+Fitted all the way, the profile cost more: 28.3% WER on the 60 sentences.
+Ablations put it in three places: **obstruent loci** fitted from the vowel
+edges (+5 points), **bdl's breathiness** (breath noise ×2.6: +3.5), and
+his **quieter consonants** (+2). Vowel targets and bandwidths alone cost
+nothing (17.0%). So the fitter now leaves the obstruent loci at their stock
+values (`--loci` fits them), and moves consonant levels and breath noise
+only half way (in log) toward the speaker, breath capped at ×1.5 (`--full`
+for all the way). The reading: natural speech carries redundant cues this
+engine lacks, and its exaggerated consonants and clean voice make up for
+them; a speaker's identity lives mostly in the vowels, pitch, tempo and
+voice quality anyway. `--variation 1` (token-to-token spread of F1–F3 as
+measured) costs about 5 more points (27.2%), 0.5 about 3 (25.2%): real variation is
+only harmless when the rest of the signal is as rich as real speech.
+Measured spreads come from differences between takes of the same prompt
+when there are two or more takes, otherwise from half the residual spread,
+which also holds measurement error, so expect it to overstate.
+
+Not fitted: velar loci (the engine computes them from the neighbouring
+vowel), frication spectra (only levels), and F0 contour shape. The profile
+moves the base and range of the stock intonation model, not its accents.
+
 ### How much further could it go?
 
 1. **More rules.** Better consonant clusters, syllabic consonants ("bottle"),
@@ -574,3 +645,17 @@ drove the field to data-driven methods.
   8 blind trials (sides shuffled, 5 of 8 with the new voice as A). One
   listener, so it says nothing about listeners in general, but by a sign
   test that is unlikely to be chance for this listener (p ≈ 0.004).
+- 2026-11-19: Voice profiles: the refined engine can load one speaker's
+  fitted targets (`--voice`, `--style`, `--variation`; §8 "Fitted to one
+  speaker"). New: `voice/script.tsv` and `tools/record-voice.py` (the
+  recording session), `tools/align.py` (HMM forced aligner: 81–87% of
+  boundaries within 20 ms on two unseen female ARCTIC speakers after
+  adaptation), `tools/fit-voice.py` (analysis-by-synthesis fit and score),
+  `ttslab profile`, inline ARPAbet in text (`{shown|aa0 p aa1}`), and
+  `ttslab batch` with a path prefix also writes each sentence's segments.
+  Validated on ARCTIC bdl: per-vowel formant error 10/9.5/7.9% →
+  4.8/5.0/1.4% (F1/F2/F3) on held-out sentences, LTAS gap 2.6 → 1.4 dB;
+  WER 19.1% → 22.6% on the 60-sentence set (overlapping CIs) after keeping
+  the stock obstruent loci and moving consonant levels and breathiness only
+  half way, which had cost 9 points at full strength. The stock voice is
+  bit-identical without a profile.
