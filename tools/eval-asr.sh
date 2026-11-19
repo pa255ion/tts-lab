@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 LIST=${LIST:-tools/eval-sentences.txt}
-BIN=./zig-out/bin/ttslab
+BIN=${TTSLAB:-./zig-out/bin/ttslab}
 MODEL=${MODEL:-data/models/ggml-base.en.bin}
 mkdir -p out/eval
 rm -f out/eval/*.wav out/eval/*.txt

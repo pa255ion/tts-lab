@@ -588,6 +588,10 @@ fn dominanceTracks(alloc: std.mem.Allocator, segs: []const Seg, tg: []const Targ
 /// voice pressed (H1-H2 barely moves).
 const lf_ta_scale: f32 = 0.4;
 
+/// F0 wander (refined): standard deviation (fraction of F0) and time constant (s).
+const wander_sd: f32 = 0.025;
+const wander_tau: f32 = 0.03;
+
 const LF = struct {
     tp: f32,
     te: f32,
@@ -721,6 +725,8 @@ pub fn render(alloc: std.mem.Allocator, frames: []const Frame, mode: Mode, voice
     var period: f32 = dsp.sample_rate / @max(frames[0].f0, 40);
     var lf = LF.init(period, frames[0].rd);
     var cycle_amp: f32 = 1;
+    // Slow random F0 wander (AR(1) over glottal cycles), see below.
+    var wander: f32 = 0;
     var open = true;
     var b1_open: f32 = 0;
     var t_sec: f32 = 0;
@@ -755,7 +761,20 @@ pub fn render(alloc: std.mem.Allocator, frames: []const Frame, mode: Mode, voice
             var f0 = @max(cur.f0, 40);
             if (refined) {
                 const flutter = (@sin(2 * std.math.pi * 12.7 * t_sec) + @sin(2 * std.math.pi * 7.1 * t_sec) + @sin(2 * std.math.pi * 4.7 * t_sec)) / 3;
-                f0 *= 1 + 0.008 * flutter + 0.006 * rng.gauss(); // flutter + jitter
+                // Wander: natural F0 drifts by a fraction of a semitone
+                // within a vowel (|dF0| per 10 ms mid-vowel: p90 0.5-0.7 st
+                // in ARCTIC, 0.37 here without it). Period-to-period jitter
+                // alone averages out over a few cycles, so this is low-pass
+                // noise with a ~30 ms time constant. Not when recording the
+                // corpora for the data-driven engines (variability > 0):
+                // like a real voice talent, that voice is asked to keep a
+                // steady pitch, and the diphone voice lost intelligibility
+                // (ASR WER 15% -> 19%) when its units wandered.
+                if (voice.variability == 0) {
+                    const a = @exp(-period / dsp.sample_rate / wander_tau);
+                    wander = a * wander + @sqrt(1 - a * a) * wander_sd * rng.gauss();
+                }
+                f0 *= 1 + 0.008 * flutter + 0.006 * rng.gauss() + wander; // flutter + jitter + wander
                 cycle_amp = std.math.clamp(1 + 0.05 * rng.gauss(), 0.8, 1.2); // shimmer
             }
             period = dsp.sample_rate / f0;
