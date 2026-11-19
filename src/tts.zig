@@ -166,6 +166,9 @@ pub const Synth = struct {
     pub fn plan(s: *Synth, arena: std.mem.Allocator, text: []const u8, opt: Options) !prosody.Utterance {
         var po = opt.prosody;
         po.base_f0 *= opt.pitch_scale;
+        // The refined formant engine uses the data-fitted timing; the others
+        // keep Klatt's rules (their voices were recorded with them).
+        if (po.timing == null) po.timing = if (opt.engine == .formant_refined) .fitted else .klatt;
         return prosody.plan(arena, &s.lex, text, po);
     }
 

@@ -62,6 +62,12 @@ pub const samples_per_frame: usize = @intFromFloat(dsp.sample_rate / prosody.fra
 const f4 = [2]f32{ 3500, 250 };
 const f5 = [2]f32{ 4500, 350 };
 const f6 = [2]f32{ 5500, 600 };
+/// Refined only: two more poles standing in for the vocal tract's formants
+/// above F6 (Klatt's "higher-pole correction"). Without them a cascade of
+/// DC-normalized resonators falls off a cliff above the last formant, and
+/// vowels came out 25-40 dB below natural speech at 5-7 kHz: muffled.
+const f7 = [2]f32{ 6500, 800 };
+const f8 = [2]f32{ 7200, 1500 };
 const nasal_pole = [2]f32{ 270, 100 };
 
 // Level calibration between the voiced (cascade) path and the noise paths;
@@ -200,6 +206,23 @@ pub fn makeFrames(alloc: std.mem.Allocator, utt: *const Utterance, mode: Mode, v
         _ = s;
     }
 
+    if (mode == .refined) {
+        // Vocal effort rises with pitch: accents get louder, and loudness
+        // declines along with F0 over a phrase. ~0.55 dB per semitone, from
+        // the voicing amplitude only (noise sources keep their level).
+        // Without it vowel levels varied half as much as in recordings.
+        var sum: f64 = 0;
+        var cnt: usize = 0;
+        for (frames) |f| if (f.av > 0.05) {
+            sum += @log(f.f0);
+            cnt += 1;
+        };
+        if (cnt > 0) {
+            const ref = @exp(@as(f32, @floatCast(sum / @as(f64, @floatFromInt(cnt)))));
+            for (frames) |*f| f.av *= std.math.clamp(std.math.pow(f32, f.f0 / ref, 1.1), 0.6, 1.6);
+        }
+    }
+
     return frames;
 }
 
@@ -208,14 +231,16 @@ fn sourceParams(fr: *Frame, segs: []const Seg, si: usize, t: f32, mode: Mode, pf
     const inf = s.phone.info();
     const refined = mode == .refined;
     const local = t - s.start;
-    var rd: f32 = 1.1;
+    // Rd baselines are tuned against natural read speech (CMU ARCTIC bdl):
+    // H1-H2 about -1 dB in vowels, close to the recordings' -3 dB.
+    var rd: f32 = if (refined) 0.8 else 1.1;
 
     switch (inf.class) {
         .silence => {},
         .vowel, .diphthong => {
             if (refined) {
                 fr.av = if (s.stress == 0 or s.function_word) 0.72 else if (s.accent) 1.1 else 1.0;
-                rd = if (s.stress == 0 or s.function_word) 1.3 else if (s.accent) 0.9 else 1.05;
+                rd = if (s.stress == 0 or s.function_word) 0.9 else if (s.accent) 0.6 else 0.7;
             } else {
                 fr.av = if (s.stress == 0) 0.85 else 1.0;
             }
@@ -224,10 +249,12 @@ fn sourceParams(fr: *Frame, segs: []const Seg, si: usize, t: f32, mode: Mode, pf
         .nasal => fr.av = if (refined) 0.8 else 0.9,
         .fricative => {
             fr.af = inf.fric_amp;
-            fr.fg = inf.fric;
+            fr.fg = if (refined) tiedShape(s.phone, segs, si, false) else inf.fric;
+            // Refined: /f v th/ were 5-10 dB below their level in recordings.
+            if (refined and (inf.place == .labial or inf.place == .dental)) fr.af *= 1.8;
             if (inf.voiced) {
                 fr.av = 0.45;
-                rd = 1.5;
+                rd = if (refined) 1.1 else 1.5;
             }
             if (refined) {
                 // Frication builds up and decays rather than switching.
@@ -254,7 +281,7 @@ fn sourceParams(fr: *Frame, segs: []const Seg, si: usize, t: f32, mode: Mode, pf
             const close_end = if (is_aff) s.dur * 0.3 else @max(s.dur - burst_dur, s.dur * 0.5);
             if (inf.voiced) {
                 fr.av = if (refined) 0.12 else 0.1;
-                rd = 1.6;
+                rd = if (refined) 1.2 else 1.6;
             }
             if (local >= close_end) {
                 if (is_aff and local >= close_end + 0.008) {
@@ -263,6 +290,14 @@ fn sourceParams(fr: *Frame, segs: []const Seg, si: usize, t: f32, mode: Mode, pf
                     fr.fg = if (refined) tiedShape(s.phone, segs, si, false) else inf.fric;
                 } else {
                     fr.af = if (inf.voiced) 0.4 else 0.7;
+                    // Refined, levels against recordings: alveolar bursts
+                    // were ~4 dB too strong, labial and voiced velar ones
+                    // 3-6 dB too weak.
+                    if (refined) {
+                        if (inf.place == .alveolar and !inf.voiced) fr.af = 0.5;
+                        if (inf.voiced and inf.place != .alveolar) fr.af = 0.6;
+                        if (!inf.voiced and inf.place == .labial) fr.af = 1.0;
+                    }
                     fr.fg = if (refined) tiedShape(s.phone, segs, si, true) else inf.burst;
                 }
             }
@@ -308,10 +343,10 @@ fn sourceParams(fr: *Frame, segs: []const Seg, si: usize, t: f32, mode: Mode, pf
             // Phrase-final: voice gets laxer and breathier as it fades.
             const prog = std.math.clamp((t - pfs) / (pfe - pfs), 0, 1);
             fr.av *= 1 - 0.35 * prog;
-            rd += 0.9 * prog;
+            rd += 0.8 * prog;
         }
         // Breathiness rides on the voiced source.
-        if (fr.av > 0.05) fr.ah = @max(fr.ah, 0.02 + 0.06 * (rd - 1.0));
+        if (fr.av > 0.05) fr.ah = @max(fr.ah, 0.06 + 0.06 * @max(rd - 0.7, 0));
         // Microprosody: F0 is perturbed by the consonant before a vowel.
         if (s.phone.isVowel() and si > 0 and local < 0.05) {
             const p = segs[si - 1].phone.info();
@@ -337,7 +372,7 @@ fn sourceParams(fr: *Frame, segs: []const Seg, si: usize, t: f32, mode: Mode, pf
 pub const tied_bw = [6]f32{ 200, 300, 400, 600, 1000, 1400 };
 
 fn tiedShape(p: Phone, segs: []const Seg, si: usize, burst: bool) [phones.n_noise]f32 {
-    const sib_s = [phones.n_noise]f32{ 0, 0, 0.03, 0.15, 1.0, 0.8, 0.02 };
+    const sib_s = [phones.n_noise]f32{ 0, 0, 0.05, 0.4, 1.0, 0.4, 0.02 };
     const sib_sh = [phones.n_noise]f32{ 0.15, 1.0, 0.5, 0.35, 0.15, 0.05, 0 };
     const labial = [phones.n_noise]f32{ 0, 0, 0, 0, 0.05, 0.1, 1.0 };
     const dental = [phones.n_noise]f32{ 0, 0, 0, 0.05, 0.2, 0.3, 0.8 };
@@ -351,7 +386,7 @@ fn tiedShape(p: Phone, segs: []const Seg, si: usize, burst: bool) [phones.n_nois
             else
                 .{ 0.3, 1.0, 0.4, 0.1, 0, 0, 0.05 };
         },
-        else => .{ 0, 0.1, 0.4, 0.8, 1.0, 0.5, 0.1 },
+        else => .{ 0, 0.1, 0.4, 0.8, 1.0, 0.25, 0.1 },
     };
     return switch (p) {
         .s, .z => sib_s,
@@ -546,6 +581,13 @@ fn dominanceTracks(alloc: std.mem.Allocator, segs: []const Seg, tg: []const Targ
 
 /// Liljencrants–Fant glottal flow derivative for one cycle, parameterised by
 /// Fant's Rd. Times are in samples; the negative peak (at te) is -1.
+/// Return-phase length relative to Fant's Rd regression. The regression gives
+/// a slow closure for a male voice at 16 kHz (the source falls ~10 dB/oct
+/// above 1 kHz), and vowels came out 6-15 dB darker at 1-4 kHz than natural
+/// speech; a crisper closure restores most of that without making the
+/// voice pressed (H1-H2 barely moves).
+const lf_ta_scale: f32 = 0.4;
+
 const LF = struct {
     tp: f32,
     te: f32,
@@ -564,7 +606,7 @@ const LF = struct {
         const rgp = 1 / (4 * ((0.11 * rd / (0.5 + 1.2 * rkp)) - rap) / rkp);
         const tp = t0 / (2 * rgp);
         const te = @min(tp * (1 + rkp), t0 * 0.97);
-        const ta = @max(rap * t0, 0.5);
+        const ta = @max(rap * t0 * lf_ta_scale, 0.5);
         const tc = t0;
         // Return phase: eps * ta = 1 - exp(-eps (tc - te)).
         var eps = 1 / ta;
@@ -647,13 +689,22 @@ pub fn render(alloc: std.mem.Allocator, frames: []const Frame, mode: Mode, voice
     var r4: dsp.Resonator = .{};
     var r5: dsp.Resonator = .{};
     var r6: dsp.Resonator = .{};
+    var r7: dsp.Resonator = .{};
+    var r8: dsp.Resonator = .{};
     var np: dsp.Resonator = .{};
     var nz: dsp.AntiResonator = .{};
-    r4.set(f4[0] * fs, f4[1]);
-    r5.set(f5[0] * fs, f5[1]);
+    // Refined: narrower F4/F5 (measured male values are ~200/250 Hz); with
+    // Klatt's wider defaults the 3-5 kHz region came out 6+ dB below
+    // natural recordings.
+    r4.set(f4[0] * fs, if (refined) 200 else f4[1]);
+    r5.set(f5[0] * fs, if (refined) 250 else f5[1]);
     r6.set(f6[0] * fs, f6[1]);
+    r7.set(@min(f7[0] * fs, 7600), f7[1]);
+    r8.set(@min(f8[0] * fs, 7700), f8[1]);
     np.set(nasal_pole[0] * fs, nasal_pole[1]);
 
+    var byp_lp: f32 = 0;
+    const byp_a: f32 = 1 - @exp(-2 * std.math.pi * 4000 / dsp.sample_rate);
     var bank: [phones.noise_bank.len]dsp.Resonator = undefined;
     for (&bank, phones.noise_bank) |*r, nb| r.setPeak(@min(nb.f * fs, 7600), nb.bw * fs);
     if (refined) {
@@ -746,7 +797,7 @@ pub fn render(alloc: std.mem.Allocator, frames: []const Frame, mode: Mode, voice
         const glot = v * cur.av * vg + asp;
 
         var x = nz.step(np.step(glot));
-        if (refined) x = r6.step(x);
+        if (refined) x = r6.step(r7.step(r8.step(x)));
         x = r5.step(x);
         x = r4.step(x);
         x = r3.step(x);
@@ -762,7 +813,15 @@ pub fn render(alloc: std.mem.Allocator, frames: []const Frame, mode: Mode, voice
                 par += sign * cur.fg[k] * r.step(nf);
                 sign = -sign;
             }
-            par += cur.fg[phones.n_noise - 1] * nf * 0.25;
+            // The bypass is flat noise; in refined mode it is tilted down
+            // above ~4 kHz, as lip/teeth noise and burst spectra are in
+            // recordings (it otherwise put 13 dB too much energy at 8 kHz).
+            var byp = nf;
+            if (refined) {
+                byp_lp += byp_a * (nf - byp_lp);
+                byp = byp_lp;
+            }
+            par += cur.fg[phones.n_noise - 1] * byp * 0.25;
         } else {
             for (&bank) |*r| _ = r.step(0);
         }

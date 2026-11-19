@@ -34,7 +34,10 @@
 
         # `nix develop .#eval`: speech recognition for the intelligibility check
         eval = pkgs.mkShell {
-          packages = common ++ [ pkgs.whisper-cpp ];
+          packages = common ++ [
+            pkgs.whisper-cpp
+            (pkgs.python3.withPackages (p: [ p.numpy ])) # tools/acoustics.py
+          ];
         };
       };
     };

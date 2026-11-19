@@ -4,10 +4,11 @@
 //!   ttslab say [opts] TEXT       synthesize to a WAV and play it
 //!   ttslab compare [opts] TEXT   every engine -> out/<engine>.wav
 //!   ttslab phonemes TEXT         show the front end's transcription
+//!   ttslab segs TEXT             planned segments and prosodic features (CSV)
 //!   ttslab bench [--reps N]      cost profile (markdown)
 //!
 //! Options: -e/--engine classic|refined|diphone|unitsel|hmm (or 1-5)
-//!          --f0 flat|hat|fujisaki  --pitch X  --rate X  --range X  --formant X
+//!          --f0 flat|hat|fujisaki  --timing klatt|fitted  --pitch X  --rate X  --range X  --formant X
 //!          --no-psola  --modify  --no-mlpg  --gv
 //!          -o/--out FILE  --play/--no-play  --dict FILE  --no-dict  --threads N
 //!
@@ -79,6 +80,9 @@ fn parseArgs(a: std.mem.Allocator, args: []const [:0]const u8) !Cli {
             c.opt.prosody.f0_model = std.meta.stringToEnum(prosody.F0Model, v) orelse return error.BadArgs;
         } else if (std.mem.eql(u8, x, "--pitch")) {
             c.opt.pitch_scale = try parseF(try next(args, &i));
+        } else if (std.mem.eql(u8, x, "--timing")) {
+            const v = try next(args, &i);
+            c.opt.prosody.timing = std.meta.stringToEnum(prosody.Timing, v) orelse return error.BadArgs;
         } else if (std.mem.eql(u8, x, "--rate")) {
             c.opt.prosody.rate = try parseF(try next(args, &i));
         } else if (std.mem.eql(u8, x, "--range")) {
@@ -157,6 +161,18 @@ fn run(init: std.process.Init) !void {
         const u = try synth.plan(as.allocator(), rest, cli.opt);
         print("{s}\n", .{try u.transcription(as.allocator())});
         for (u.words) |w| if (w.source == .rules) print("  (letter-to-sound rules: {s})\n", .{w.text});
+        return;
+    }
+    if (std.mem.eql(u8, cmd, "segs")) {
+        // The planned segments with their prosodic features, as CSV.
+        var as = std.heap.ArenaAllocator.init(gpa);
+        defer as.deinit();
+        const u = try synth.plan(as.allocator(), rest, cli.opt);
+        print("phone,stress,word,function_word,accent,phrase_final,dur_ms\n", .{});
+        for (u.segs) |sg| {
+            const w: i32 = if (sg.word) |x| @intCast(x) else -1;
+            print("{s},{d},{d},{d},{d},{d},{d:.1}\n", .{ sg.phone.name(), sg.stress, w, @intFromBool(sg.function_word), @intFromBool(sg.accent), @intFromBool(sg.phrase_final), sg.dur * 1000 });
+        }
         return;
     }
     if (std.mem.eql(u8, cmd, "frames")) {

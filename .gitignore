@@ -6,3 +6,5 @@ gui/build/
 result
 *.wav
 data/models/
+data/arctic/
+__pycache__/

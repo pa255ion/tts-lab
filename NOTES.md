@@ -226,18 +226,24 @@ live spectrogram is just a texture.
 
 ## 7. Cost profile
 
-Measured with `ttslab bench --reps 7` on a laptop (i7-1185G7, 8 threads for
-voice builds, synthesis single-threaded), ReleaseFast, 16 kHz output. The test
-text is three sentences, 12.1 s of speech. "Synth time" includes text analysis
-and prosody, which take under 1 ms.
+Measured with `ttslab bench --reps 7` on a desktop (Ryzen 7 5700G, 16
+threads for voice builds, synthesis single-threaded), ReleaseFast, 16 kHz
+output. The test text is three sentences, 12.1 s of speech. "Synth time"
+includes text analysis and prosody, which take under 1 ms. (The first version
+of this table, on an i7-1185G7 laptop, had the same ranking at 2–5× these
+times.)
 
 | Engine | Build | Recorded audio | Voice data | Synth time | × real time | Peak heap / synth |
 |---|---:|---:|---:|---:|---:|---:|
-| Formant (classic rules) | — | — | 4.6 KiB | 57.8 ms | 209× | 0.96 MiB |
-| Formant (refined) | — | — | 4.6 KiB | 79.2 ms | 153× | 0.96 MiB |
-| Diphone + TD-PSOLA | 1.7 s | 1,330 s | 8.9 MiB | 11.0 ms | 1,099× | 0.85 MiB |
-| Unit selection | 3.7 s | 1,772 s | 32.6 MiB | 14.1 ms | 865× | 0.88 MiB |
-| Statistical parametric (HMM) | 2.0 s | 442 s | 460 KiB | 213 ms | 57× | 1.97 MiB |
+| Formant (classic rules) | — | — | 4.6 KiB | 10.9 ms | 1,104× | 0.96 MiB |
+| Formant (refined) | — | — | 4.6 KiB + 0.2 KiB timing model | 16.8 ms | 614× | 0.83 MiB |
+| Diphone + TD-PSOLA | 0.26 s | 1,330 s | 8.9 MiB | 4.3 ms | 2,784× | 0.85 MiB |
+| Unit selection | 0.63 s | 1,772 s | 32.6 MiB | 5.6 ms | 2,151× | 0.87 MiB |
+| Statistical parametric (HMM) | 0.40 s | 442 s | 460 KiB | 95.1 ms | 127× | 1.97 MiB |
+
+The refined engine speaks the same text faster than the others (its fitted
+timing, §8), so its time per second of *audio* is about 10% higher than
+before the naturalness work (the two extra resonators), not 50%.
 
 Shared by all engines: the lexicon. The built-in list is ~350 words; the full
 CMUdict is 126k words and 6.3 MiB in this naive in-memory form (a real system
@@ -287,18 +293,25 @@ corpus) with each configuration, transcribes them with whisper.cpp
 (`base.en`), and computes the word error rate. The 95% intervals come from
 bootstrapping over sentences.
 
-| Configuration | WER | 95% CI |
-|---|---:|---:|
-| Formant classic | 18.3% | 9–29 |
-| Formant classic, flat F0 | 14.4% | 6–23 |
-| Formant refined | 18.3% | 9–30 |
-| Diphone + PSOLA | 32.8% | 21–46 |
-| Diphone, raw units (no PSOLA) | 23.9% | 15–34 |
-| Unit selection | 14.4% | 6–24 |
-| Unit selection, prosody forced by PSOLA | 15.6% | 8–25 |
-| HMM (MLPG) | 35.6% | 23–48 |
-| HMM without MLPG | 55.0% | 42–68 |
-| HMM + global variance | 36.7% | 25–48 |
+| Configuration | WER | 95% CI | First version |
+|---|---:|---:|---:|
+| Formant classic | 18.3% | 9–29 | 18.3% |
+| Formant classic, flat F0 | 14.4% | 6–23 | 14.4% |
+| Formant refined | 17.8% | 9–27 | 18.3% |
+| Diphone + PSOLA | 15.0% | 8–23 | 32.8% |
+| Diphone, raw units (no PSOLA) | 11.7% | 6–18 | 23.9% |
+| Unit selection | 15.6% | 7–26 | 14.4% |
+| Unit selection, prosody forced by PSOLA | 12.2% | 5–20 | 15.6% |
+| HMM (MLPG) | 36.7% | 24–50 | 35.6% |
+| HMM without MLPG | 53.3% | 41–67 | 55.0% |
+| HMM + global variance | 27.8% | 19–38 | 36.7% |
+
+"First version" is before the naturalness work of §8. The diphone,
+unit-selection and HMM voices are *recorded from the refined formant engine*
+(§5), so they changed with it; classic did not change at all. A second,
+harder set (60 ARCTIC b-set prompts, literary text with rare words, ~550
+words per row): classic 22.6%, refined 22.9% before and 25.4% after (95% CIs
+about ±5 points).
 
 How to read this. An ASR model is not a listener: it was trained on human
 speech, it guesses words from context, and it does not measure naturalness at
@@ -308,15 +321,22 @@ holds up:
 - **MLPG is essential.** Without it the HMM engine outputs the stair-step of
   state means, and WER jumps from 36% to 55%. This is exactly why Tokuda's
   parameter generation algorithm made HMM synthesis viable.
-- **GV does not help intelligibility.** It counteracts over-smoothing (it
-  helps perceived crispness), but it also exaggerates estimation noise.
-- **Unit selection and formant synthesis are the most intelligible here;
-  diphone+PSOLA and HMM the least.** Diphone+PSOLA has to stretch monotone
-  110 Hz units to a contour spanning 85–160 Hz, and TD-PSOLA degrades at large
-  modification factors. Unit selection mostly avoids modification, and
-  forcing its units onto the plan costs little here.
+- **The concatenative engines inherit their voice talent's quality.** When
+  the refined formant voice was brightened (§8), diphone+PSOLA went from the
+  second-worst row (32.8%) to among the best (15.0%), with no change to the
+  diphone code. A muffled recording is a muffled voice, however good the
+  concatenation. This is the voice-talent problem real systems spend most of
+  their budget on.
+- **GV's effect depends on the data.** With the first voice talent it made no
+  difference; with the brighter one it helped (36.7% → 27.8%, CIs overlap).
+  It counteracts over-smoothing, but also exaggerates estimation noise.
+- **PSOLA's cost shows up as a gap, not a ranking.** Raw diphones (no pitch
+  or duration modification) stay ahead of PSOLA-modified ones, and TD-PSOLA
+  degrades at large modification factors: the units are monotone 110 Hz and
+  the contour spans 85–160 Hz.
 - **Classic and refined formant synthesis are indistinguishable by ASR.** The
-  refinements improve naturalness, which this metric doesn't see. They also
+  refinements improve naturalness, which this metric doesn't see (§8 measures
+  that against recordings instead). They also
   fixed specific consonant errors: tying the burst spectrum to the formants
   fixed most /k/→/t/,/p/ confusions, and a release-frication phase fixed
   initial /t/ being heard as /h/. Section 8 has more on this.
@@ -351,6 +371,11 @@ with stress) must be noticed, formalised and tuned by an expert.
 | Bursts and frication | fixed noise bank | parallel resonators tied to the current F2..F5 (Klatt 1980) | Velar bursts track the vowel; fixed most /k/ confusions in the ASR test |
 | Stop release | burst, then straight into aspiration | burst, then 6–20 ms of decaying frication at the constriction, with the aspiration fading in under it | Initial /t/ stops sounding like /h/ ("Turn" was heard as "Her"); first-word ASR on a /t/-initial set went from 7/20 to 11/20 |
 | Vowel reduction, microprosody | partial | unstressed vowels toward schwa; F0 bumps after voiceless consonants | Small naturalness cues |
+| Upper spectrum | F4–F6 only | plus two poles at 6.5 and 7.2 kHz (higher-pole correction) | Vowels no longer 25–40 dB too weak at 5–7 kHz; the biggest change in brightness |
+| Voice quality baseline | — | tenser Rd, crisper glottal closure (LF return phase ×0.4) | H1–H2 and the 1–4 kHz balance within the range of three natural male voices |
+| Noise spectra | flat bypass, fixed shapes | bypass tilted down above 4 kHz; /s/ peak lowered; fricatives through the formant-tied bank | 8 kHz excess of 13 dB removed; less hiss |
+| Loudness | per-class constants | voicing amplitude follows F0 (~0.55 dB/semitone) | Accents louder, loudness declines with pitch over a phrase; vowel level spread as in recordings |
+| Timing | Klatt (1979) rules and values | same kind of rules, values fitted to 100k phones of read speech | Natural rhythm: vowels and consonants equally long on average, as in recordings, instead of 2:1 |
 
 Two lessons from building this:
 
@@ -365,6 +390,67 @@ Two lessons from building this:
   naturalness, and every increment there costs disproportionate rule-writing
   effort. That is why the field moved to data.
 
+### Measured against recordings
+
+Naturalness needs listeners, but gross departures from natural speech can be
+measured. `tools/acoustics.py` computes the same statistics for synthetic and
+natural speech: long-term spectrum, per-vowel spectra, harmonics-to-noise
+ratio, H1–H2 (a voice-quality measure), obstruent levels relative to vowels,
+vowel level spread, F0 movement and segment durations. The reference is CMU
+ARCTIC (three US male speakers, bdl, rms and jmk, reading the same prompts;
+free for any use; fetched by `tools/fetch-arctic.sh`, not committed), and the
+synthetic side speaks the same 20 prompts.
+
+| Measure | Natural (3 speakers) | Refined, before | Refined, now |
+|---|---|---:|---:|
+| Vowel level at 5–7 kHz, re strongest band | −36 to −45 dB | −62 to −88 dB | −34 to −45 dB |
+| Long-term spectrum at 1 / 2 / 4 / 8 kHz, re 500 Hz | −8 to −9 / −10 to −15 / −11 to −12 / −17 to −19 | −12 / −19 / −17 / −12 | −11 / −14 / −14 / −16 |
+| H1–H2 in vowels | −3 to +6 dB | +4.0 dB | −2.4 dB |
+| Vowel level spread (sd) | 3.3–4.4 dB | 2.5 dB | 3.8 dB |
+| Speech time, 20 prompts | 53–58 s | 70.2 s | 56.6 s |
+| Mean vowel / consonant duration | 80–84 / 79–88 ms | 147 / 72 ms | 83 / 83 ms |
+| Pause at a comma | at ~40% of commas, 56 ms on average | 180 ms, always | 110 ms, always |
+| /t/ burst peak, re vowels | −6 to −10 dB | −2.3 dB | −6.8 dB |
+| /f/ peak, re vowels | −14 to −15 dB | −22.6 dB | −18.5 dB |
+| F0 movement per 10 ms in vowels, mean | 0.26–0.33 st | 0.14 st | 0.20 st |
+
+What the measurements found, in order of size:
+
+1. **A spectral cliff above 4 kHz.** A cascade of DC-normalized resonators
+   falls steeply above its last formant, and the real vocal tract has more
+   formants than six. Klatt described the fix ("higher-pole correction");
+   this project's refined mode lacked it, and vowels were 25–40 dB too weak
+   at 5–7 kHz. Two extra resonators fixed it. This is the "muffled" quality
+   that formant voices are known for.
+2. **Rhythm.** Klatt's inherent durations describe slow, careful speech:
+   vowels came out twice as long as consonants, while the recordings have
+   them equally long. A duration model with Klatt's structure (phone base
+   duration times context factors for stress, accent, phrase-final position,
+   word position, clusters, the following consonant) was fitted to ~100,000
+   aligned phones (`tools/fit-durations.py`, `src/duration_model.zig`). On
+   held-out sentences its predictions correlate with the speakers' durations
+   at r = 0.71 for vowels and 0.60 for consonants, against 0.57 and 0.39 for
+   Klatt's rules. The numbers are 57 floats: the fitted model is a rule
+   system that happened to be written by regression.
+3. **Voice quality and the 1–4 kHz balance.** Fant's Rd regression gives a
+   slow glottal closure for a male voice, which darkens the spectrum. A
+   tenser baseline and a shorter return phase brought H1–H2 and the mid
+   frequencies into the natural range.
+4. **Noise sources too bright** (frication and bursts had 13 dB too much at
+   8 kHz), **flat loudness** (vowel levels varied half as much as in
+   recordings), and **consonant levels** off by 4–8 dB for /t f th p/.
+
+ASR did not move (17.8% vs 18.3%; 25.4% vs 22.9% on the harder set, within
+noise), which is the point: these are changes a word-error rate cannot see.
+One change that it *could* see was dropped: a stronger stressed/unstressed
+amplitude contrast (unstressed vowels 3 dB quieter) cost about 3 points on
+the 60-sentence set, and the original contrast was kept.
+
+Still missing, by these measures: fast F0 movements (the 90th percentile of
+F0 change per 10 ms is 0.37 st against 0.53–0.67 natural), and every
+judgement a listener would make. The A/B page in the log entry for
+2026-11-18 collects the latter.
+
 ### How much further could it go?
 
 1. **More rules.** Better consonant clusters, syllabic consonants ("bottle"),
@@ -372,7 +458,9 @@ Two lessons from building this:
    speaker-specific formant targets. Each is a weekend's work and a small
    gain. DECtalk and eSpeak represent decades of this; they are very
    intelligible and clearly synthetic.
-2. **Learn the rules from data: the real "in-between".** Keep the formant
+2. **Learn the rules from data: the real "in-between".** The fitted duration
+   model above is a first, small step: the rule structure stays, the numbers
+   come from recordings. The full version keeps the formant
    synthesizer as the vocoder, but predict its parameter tracks with a
    statistical model trained on labelled speech. Formant tracks would be
    extracted from recordings by analysis, or by analysis-by-synthesis fitting.
@@ -413,7 +501,7 @@ Measured here and from the history of these systems:
 - **Costs.** Naturalness is capped by the rules, the voice is synthetic in an
   identifiable way, and building a new voice or language needs phonetic
   expertise rather than recordings. Per sample, it is *not* the cheapest
-  method: PSOLA concatenation is 5–7× cheaper here.
+  method: PSOLA concatenation is about 4× cheaper here.
 
 **Bottom line.** Hand-tuned formant synthesis can be made very intelligible
 and noticeably more pleasant than 1980s systems, but not natural; that ceiling
@@ -469,3 +557,16 @@ drove the field to data-driven methods.
   B1 and lower F1 during aspiration) was also tried, made no measurable
   difference, and was left out. Classic is unchanged on purpose: it keeps
   the early-rule behaviour as the baseline. "Ted" is still heard as "head".
+- 2026-11-18: Naturalness pass on the refined engine, measured against CMU
+  ARCTIC recordings (§8 "Measured against recordings"). New tools:
+  `tools/acoustics.py` (spectra, HNR, H1–H2, levels, F0, durations for
+  synthetic and natural speech alike), `tools/fetch-arctic.sh`,
+  `tools/fit-durations.py` and the `ttslab segs` command. Changes, largest
+  first: higher-pole correction (F7, F8); a fitted duration model
+  (`src/duration_model.zig`, `--timing klatt|fitted`, refined defaults to
+  fitted); tenser Rd baseline with a shorter LF return phase; noise path
+  tilted above 4 kHz; loudness tied to F0; obstruent level corrections;
+  shorter comma pauses (110 ms). ASR unchanged within noise. Every engine
+  recorded from the refined voice improved as a side effect (diphone+PSOLA
+  32.8% → 15.0% WER). A blind A/B listening page (old vs new refined, eight
+  sentences) collects the listener judgements that the metrics cannot make.

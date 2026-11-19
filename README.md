@@ -34,7 +34,8 @@ ttslab bench                                 # cost profile
 ```
 
 Engines: `classic refined diphone unitsel hmm` (or `1`–`5`). Options:
-`--f0 flat|hat|fujisaki --pitch X --rate X --range X --formant X --no-psola --modify --no-mlpg --gv`.
+`--f0 flat|hat|fujisaki --timing klatt|fitted --pitch X --rate X --range X --formant X --no-psola --modify --no-mlpg --gv`.
+`ttslab segs TEXT` prints the planned segments with their prosodic features.
 
 ## GUI
 
@@ -50,6 +51,9 @@ gui/build/ttslab-gui
 zig build test
 nix develop .#eval -c tools/eval-asr.sh      # whisper.cpp word error rate per engine (see the script for the model download)
 tools/spectrogram.sh out/*.wav               # PNG spectrograms (inside nix develop)
+AUDIO=1 tools/fetch-arctic.sh                # CMU ARCTIC labels (+20 recordings each) for the next two
+nix develop .#eval -c tools/acoustics.py -s out.wav labels.csv ...   # compare with natural speech
+nix develop .#eval -c tools/fit-durations.py --write                 # refit src/duration_model.zig
 ```
 
 ## License and credits
@@ -60,7 +64,12 @@ Pronunciations come from the [CMU Pronouncing Dictionary](https://github.com/cmu
 (Copyright © 1993-2015 Carnegie Mellon University, BSD-style licence, full text in
 [licenses/CMUdict-LICENSE](licenses/CMUdict-LICENSE)). The built-in word list in
 `src/lexicon.zig` is drawn from it; the full dictionary is downloaded by
-`tools/fetch-cmudict.sh`, not shipped. The letter-to-sound rules are a
+`tools/fetch-cmudict.sh`, not shipped. The refined engine's duration model
+(`src/duration_model.zig`) is fitted to phone labels of the
+[CMU ARCTIC](http://festvox.org/cmu_arctic/) databases (Copyright © 2003
+Carnegie Mellon University, free for any use; licence in
+[licenses/CMU-ARCTIC-LICENSE](licenses/CMU-ARCTIC-LICENSE)); only the fitted
+numbers are included, not the data. The letter-to-sound rules are a
 re-implementation in the style of Elovitz et al., *Letter-to-Sound Rules for
 Automatic Translation of English Text to Phonetics* (Naval Research Laboratory,
 1976).

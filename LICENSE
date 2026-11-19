@@ -29,3 +29,9 @@ and is partly drawn from, the CMU Pronouncing Dictionary, Copyright (C)
 1993-2015 Carnegie Mellon University, used under its BSD-style licence. The
 full licence text is in licenses/CMUdict-LICENSE and applies to that list.
 The full dictionary is not included; tools/fetch-cmudict.sh downloads it.
+
+The duration model in src/duration_model.zig was fitted to phone labels from
+the CMU ARCTIC databases, Copyright (c) 2003 Carnegie Mellon University, free
+for any use under the terms in licenses/CMU-ARCTIC-LICENSE. Only numbers
+derived from the labels are included; tools/fetch-arctic.sh downloads the
+data.
