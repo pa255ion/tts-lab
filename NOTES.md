@@ -570,3 +570,7 @@ drove the field to data-driven methods.
   recorded from the refined voice improved as a side effect (diphone+PSOLA
   32.8% → 15.0% WER). A blind A/B listening page (old vs new refined, eight
   sentences) collects the listener judgements that the metrics cannot make.
+- 2026-11-19: Listening result: the new refined voice was preferred in 8 of
+  8 blind trials (sides shuffled, 5 of 8 with the new voice as A). One
+  listener, so it says nothing about listeners in general, but by a sign
+  test that is unlikely to be chance for this listener (p ≈ 0.004).
