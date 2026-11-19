@@ -59,6 +59,10 @@ void ttslab_destroy(ttslab *t);
 int ttslab_add_dict(ttslab *t, const char *data, size_t len);
 int ttslab_dict_words(ttslab *t);
 
+/* Load a voice profile (tools/fit-voice.py output) for the refined formant
+ * engine; len 0 returns to the stock voice. Returns 0, or -1 on a bad file. */
+int ttslab_set_voice(ttslab *t, const char *data, size_t len);
+
 int ttslab_engine_count(void);
 const char *ttslab_engine_name(int engine);
 int ttslab_engine_ready(ttslab *t, int engine);

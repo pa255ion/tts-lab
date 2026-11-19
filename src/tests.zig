@@ -5,6 +5,7 @@ test {
     _ = @import("prosody.zig");
     _ = @import("dsp.zig");
     _ = @import("formant.zig");
+    _ = @import("voice_profile.zig");
     _ = @import("corpus.zig");
     _ = @import("psola.zig");
     _ = @import("diphone.zig");

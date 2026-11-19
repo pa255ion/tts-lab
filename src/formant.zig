@@ -26,8 +26,11 @@ const Phone = phones.Phone;
 const prosody = @import("prosody.zig");
 const Utterance = prosody.Utterance;
 const Seg = prosody.Seg;
+const voice_profile = @import("voice_profile.zig");
 
 pub const Mode = enum { classic, refined };
+
+const Targets = struct { f: [3]f32, f_end: [3]f32, b: [3]f32 };
 
 pub const Voice = struct {
     /// Multiplies the planned F0.
@@ -38,6 +41,29 @@ pub const Voice = struct {
     /// formant engine acts as "voice talent" for the recorded corpora.
     variability: f32 = 0,
     seed: u32 = 1,
+    /// A speaker's fitted targets (refined mode; tools/fit-voice.py).
+    profile: ?*const voice_profile.Profile = null,
+    /// With a profile: 0 = the speaker's mean targets every time, 1 = vary
+    /// them token by token as much as the speaker's recordings did.
+    variation: f32 = 0,
+    /// Added to the LF Rd, and breath-noise multiplier (a profile's style).
+    rd_offset: f32 = 0,
+    breath: f32 = 1,
+
+    /// Formant targets (start, end) and bandwidths of a phone in this voice.
+    fn targets(v: Voice, p: Phone) Targets {
+        const inf = p.info();
+        var out: Targets = .{ .f = inf.f, .f_end = inf.f_end, .b = inf.b };
+        if (v.profile) |pr| {
+            const e = pr.entry(p);
+            if (e.f) |f| {
+                out.f = f;
+                out.f_end = e.f_end orelse f;
+            }
+            if (e.b) |b| out.b = b;
+        }
+        return out;
+    }
 };
 
 pub const Frame = struct {
@@ -106,10 +132,12 @@ const Target = struct {
 fn segTargets(alloc: std.mem.Allocator, segs: []const Seg, voice: Voice) ![]Target {
     const tg = try alloc.alloc(Target, segs.len);
     var rng = dsp.Rng.init(voice.seed *% 2654435761 +% 17);
+    var rng_v = dsp.Rng.init(voice.seed *% 40503 +% 99);
     for (segs, 0..) |s, i| {
         const inf = s.phone.info();
-        var fs = inf.f;
-        var fe = inf.f_end;
+        const vt = voice.targets(s.phone);
+        var fs = vt.f;
+        var fe = vt.f_end;
         if (s.phone.isVowel() and s.stress == 0) {
             // Vowel reduction: unstressed vowels drift toward schwa.
             const k: f32 = if (s.phone == .ah) 1.0 else 0.3;
@@ -121,7 +149,7 @@ fn segTargets(alloc: std.mem.Allocator, segs: []const Seg, voice: Voice) ![]Targ
         if (inf.place == .velar and (inf.class == .stop or inf.class == .nasal)) {
             // Velar "pinch": the locus depends on the neighbouring vowel.
             if (neighbourVowel(segs, i)) |nv| {
-                const vf2 = nv.info().f[1];
+                const vf2 = voice.targets(nv).f[1];
                 const f2 = std.math.clamp(@max(vf2, 1300) + 250, 1500, 2400);
                 fs[1] = f2;
                 fs[2] = f2 + 400;
@@ -135,9 +163,18 @@ fn segTargets(alloc: std.mem.Allocator, segs: []const Seg, voice: Voice) ![]Targ
                 fe[j] *= m;
             }
         }
+        if (voice.profile != null and voice.variation > 0 and s.phone != .pau) {
+            // Token-to-token spread as measured in the speaker's recordings.
+            const sd = voice.profile.?.entry(s.phone).sd;
+            for (0..3) |j| {
+                const d = voice.variation * sd[j] * std.math.clamp(rng_v.gauss(), -2.5, 2.5);
+                fs[j] = @max(fs[j] + d, 150);
+                fe[j] = @max(fe[j] + d, 150);
+            }
+        }
         tg[i] = .{
-            .s = .{ fs[0], fs[1], fs[2], inf.b[0], inf.b[1], inf.b[2], inf.fnz },
-            .e = .{ fe[0], fe[1], fe[2], inf.b[0], inf.b[1], inf.b[2], inf.fnz },
+            .s = .{ fs[0], fs[1], fs[2], vt.b[0], vt.b[1], vt.b[2], inf.fnz },
+            .e = .{ fe[0], fe[1], fe[2], vt.b[0], vt.b[1], vt.b[2], inf.fnz },
         };
     }
     return tg;
@@ -203,7 +240,12 @@ pub fn makeFrames(alloc: std.mem.Allocator, utt: *const Utterance, mode: Mode, v
         fr.fnz = tracks[6][fi];
         fr.f0 = utt.f0[fi] * voice.pitch_scale;
         sourceParams(fr, segs, si, t, mode, pf_start[si], pf_end[si]);
-        _ = s;
+        if (voice.profile) |pr| {
+            // The speaker's voice quality and consonant levels.
+            fr.rd = std.math.clamp(fr.rd + voice.rd_offset, 0.4, 2.7);
+            if (fr.av > 0.05) fr.ah *= voice.breath;
+            fr.af *= pr.entry(s.phone).amp;
+        }
     }
 
     if (mode == .refined) {

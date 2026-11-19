@@ -5,6 +5,7 @@
 # nothing from it is committed, only the numbers fitted from it.
 # AUDIO=N also fetches the first N recordings of the a-set and of the b-set
 # per speaker (AUDIO=1 means 20), for tools/acoustics.py and tools/intonation.py.
+# (tools/align.py trains on AUDIO=300.)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 D=data/arctic
