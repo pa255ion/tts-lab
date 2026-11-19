@@ -1,0 +1,136 @@
+# tts-lab voice recording script. Columns: id <TAB> section <TAB> text.
+# {shown|arpabet} marks a word whose pronunciation is given explicitly (the
+# recorder shows "shown"; ttslab and the aligner use the phones). *word* is
+# emphasis: say that word with contrastive stress.
+# Section R (read sentences) comes from CMU ARCTIC: tools/fetch-arctic.sh.
+#
+# Q: setup
+Q01	Q	(Stay silent for three seconds: this measures the room noise.)
+Q02	Q	The quick brown fox jumps over the lazy dog.
+#
+# V: sustained vowels. About three seconds each, at a comfortable, steady pitch.
+V01	V	Hold {ee|iy1}, as in "heed".
+V02	V	Hold {ih|ih1}, as in "hid".
+V03	V	Hold {eh|eh1}, as in "head".
+V04	V	Hold {a|ae1}, as in "had".
+V05	V	Hold {ah|aa1}, as in "father".
+V06	V	Hold {aw|ao1}, as in "law" (if it sounds the same as "father" to you, that's fine).
+V07	V	Hold {uh|ah1}, as in "hud".
+V08	V	Hold {oo|uh1}, as in "hood".
+V09	V	Hold {oo|uw1}, as in "who'd".
+V10	V	Hold {er|er1}, as in "heard".
+V11	V	Hold {mm|m}, humming.
+V12	V	Hold {nn|n}, humming through the nose.
+V13	V	Hold {ss|s}.
+V14	V	Hold {sh|sh}.
+V15	V	Hold {ff|f}.
+V16	V	Hold {zz|z}.
+#
+# H: vowels in h_d words, in a carrier sentence. Read naturally, not slowly.
+H01	H	Say {heed|hh iy1 d} again.
+H02	H	Say {hid|hh ih1 d} again.
+H03	H	Say {hayed|hh ey1 d} again.
+H04	H	Say {head|hh eh1 d} again.
+H05	H	Say {had|hh ae1 d} again.
+H06	H	Say {hod|hh aa1 d} again.
+H07	H	Say {hawed|hh ao1 d} again.
+H08	H	Say {hoed|hh ow1 d} again.
+H09	H	Say {hood|hh uh1 d} again.
+H10	H	Say {who'd|hh uw1 d} again.
+H11	H	Say {hud|hh ah1 d} again.
+H12	H	Say {heard|hh er1 d} again.
+H13	H	Say {hide|hh ay1 d} again.
+H14	H	Say {how'd|hh aw1 d} again.
+H15	H	Say {hoyed|hh oy1 d} again.
+#
+# C: b, d, g before six vowels (how the vowel's formants start after each consonant).
+C01	C	Say {beet|b iy1 t} again.
+C02	C	Say {bet|b eh1 t} again.
+C03	C	Say {bat|b ae1 t} again.
+C04	C	Say {bot|b aa1 t} again.
+C05	C	Say {boat|b ow1 t} again.
+C06	C	Say {boot|b uw1 t} again.
+C07	C	Say {deed|d iy1 d} again.
+C08	C	Say {dead|d eh1 d} again.
+C09	C	Say {dad|d ae1 d} again.
+C10	C	Say {dot|d aa1 t} again.
+C11	C	Say {dote|d ow1 t} again.
+C12	C	Say {dude|d uw1 d} again.
+C13	C	Say {geese|g iy1 s} again.
+C14	C	Say {get|g eh1 t} again.
+C15	C	Say {gas|g ae1 s} again.
+C16	C	Say {got|g aa1 t} again.
+C17	C	Say {goat|g ow1 t} again.
+C18	C	Say {goose|g uw1 s} again.
+#
+# A: every consonant between two "ah" vowels, stress on the second.
+A01	A	Say {ah-PAH|aa0 p aa1} again.
+A02	A	Say {ah-BAH|aa0 b aa1} again.
+A03	A	Say {ah-TAH|aa0 t aa1} again.
+A04	A	Say {ah-DAH|aa0 d aa1} again.
+A05	A	Say {ah-KAH|aa0 k aa1} again.
+A06	A	Say {ah-GAH|aa0 g aa1} again.
+A07	A	Say {ah-CHAH|aa0 ch aa1} again.
+A08	A	Say {ah-JAH|aa0 jh aa1} again.
+A09	A	Say {ah-FAH|aa0 f aa1} again.
+A10	A	Say {ah-VAH|aa0 v aa1} again.
+A11	A	Say {ah-THAH|aa0 th aa1} again (th as in "thin").
+A12	A	Say {ah-THAH|aa0 dh aa1} again (th as in "this").
+A13	A	Say {ah-SAH|aa0 s aa1} again.
+A14	A	Say {ah-ZAH|aa0 z aa1} again.
+A15	A	Say {ah-SHAH|aa0 sh aa1} again.
+A16	A	Say {ah-ZHAH|aa0 zh aa1} again (zh as in "measure").
+A17	A	Say {ah-MAH|aa0 m aa1} again.
+A18	A	Say {ah-NAH|aa0 n aa1} again.
+A19	A	Say {AHNG-ah|aa1 ng aa0} again (ng as in "sing").
+A20	A	Say {ah-LAH|aa0 l aa1} again.
+A21	A	Say {ah-RAH|aa0 r aa1} again.
+A22	A	Say {ah-WAH|aa0 w aa1} again.
+A23	A	Say {ah-YAH|aa0 y aa1} again.
+A24	A	Say {ah-HAH|aa0 hh aa1} again.
+A25	A	Say {ee-PEE|iy0 p iy1} again.
+A26	A	Say {ee-TEE|iy0 t iy1} again.
+A27	A	Say {ee-KEE|iy0 k iy1} again.
+A28	A	Say {oo-POO|uw0 p uw1} again.
+A29	A	Say {oo-TOO|uw0 t uw1} again.
+A30	A	Say {oo-KOO|uw0 k uw1} again.
+#
+# P: intonation. Statements, questions, lists, and moving emphasis.
+P01	P	You're going home.
+P02	P	You're going home?
+P03	P	Where are you going?
+P04	P	Are you going home, or to the office?
+P05	P	We need eggs, milk, bread, and butter.
+P06	P	When I got home, the lights were off.
+P07	P	*Mary* gave Tom the book.
+P08	P	Mary *gave* Tom the book.
+P09	P	Mary gave *Tom* the book.
+P10	P	Mary gave Tom the *book*.
+P11	P	I said the *red* car, not the blue one.
+P12	P	It wasn't Tuesday, it was *Thursday*.
+P13	P	Really?
+P14	P	Really.
+P15	P	Oh, that's wonderful!
+P16	P	Is it raining?
+P17	P	It's raining.
+P18	P	Did you lock the door before you left?
+P19	P	Seven, eight, nine, ten.
+P20	P	The meeting is at three, isn't it?
+P21	P	Well, I suppose we could try again tomorrow.
+P22	P	My grandmother lived in a little yellow house near the river.
+P23	P	Nobody knew what had happened to the old lighthouse keeper.
+P24	P	Can you hear me now?
+P25	P	Please don't touch that.
+P26	P	That was the longest afternoon of my entire life.
+#
+# S: the same ten sentences in each speaking style (record once per style).
+S01	S	The train leaves at half past six in the morning.
+S02	S	I can't believe you finished the whole puzzle already.
+S03	S	Turn left at the bakery and keep walking until you see the bridge.
+S04	S	We should probably bring an umbrella, just in case.
+S05	S	Have you ever seen the ocean during a thunderstorm?
+S06	S	The library will be closed on Monday for repairs.
+S07	S	She opened the letter slowly and read it twice.
+S08	S	What a beautiful morning it is!
+S09	S	If you need anything at all, just let me know.
+S10	S	The results were better than anyone had expected.
